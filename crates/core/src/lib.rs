@@ -2,6 +2,7 @@ pub mod db;
 pub mod geo;
 pub mod ingest;
 pub mod logformat;
+pub mod query;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
