@@ -1,5 +1,6 @@
 pub mod db;
 pub mod geo;
+pub mod ingest;
 pub mod logformat;
 
 #[derive(Debug, thiserror::Error)]
