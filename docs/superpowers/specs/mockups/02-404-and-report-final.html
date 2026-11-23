@@ -1,0 +1,124 @@
+<h2>수정안: 404 고유 IP 추가, 보고서 새 디자인</h2>
+<p class="subtitle">숫자는 모두 예시입니다. 바뀐 두 부분만 보여드립니다. 대시보드의 나머지는 이전 안 그대로입니다.</p>
+
+<style>
+  .m { background:#fff; color:#1c2430; font-size:13px; padding:16px; font-family:system-ui,sans-serif; }
+  .m .bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .m .chip { border:1px solid #c9d1dc; border-radius:6px; padding:4px 10px; }
+  .m .tg { display:inline-flex; align-items:center; gap:6px; }
+  .m .tg i { width:30px; height:16px; border-radius:8px; background:#1f4e8c; position:relative; display:inline-block; }
+  .m .tg i::after { content:""; position:absolute; right:2px; top:2px; width:12px; height:12px; border-radius:50%; background:#fff; }
+  .m .kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:12px; }
+  .m .kpi { border:1px solid #dde3ea; border-radius:8px; padding:10px 12px; }
+  .m .kpi.new { border-color:#c9792b; background:#fdf6ee; }
+  .m .kpi b { display:block; font-size:20px; margin-top:2px; }
+  .m .kpi small { color:#5b6878; }
+  .m .panel { border:1px solid #dde3ea; border-radius:8px; padding:10px 12px; }
+  .m .panel h4 { margin:0 0 8px; font-size:13px; }
+  .m table { width:100%; border-collapse:collapse; }
+  .m th, .m td { text-align:right; padding:5px 8px; border-bottom:1px solid #e6ebf0; }
+  .m th:first-child, .m td:first-child { text-align:left; }
+  .m th { color:#5b6878; font-weight:600; }
+  .m .nw { background:#fdf6ee; }
+
+  .rp { background:#fff; color:#18212d; font-family:system-ui,"Malgun Gothic",sans-serif; font-size:13px; max-width:640px; margin:0 auto; padding:30px 34px; box-shadow:0 2px 10px rgba(0,0,0,.12); }
+  .rp .top { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:3px solid #1f4e8c; padding-bottom:10px; margin-bottom:16px; }
+  .rp .top h3 { margin:0; font-size:20px; color:#18212d; }
+  .rp .top span { color:#5b6878; font-size:12px; }
+  .rp .lead { font-size:15px; line-height:1.6; margin-bottom:16px; }
+  .rp .lead b { color:#1f4e8c; }
+  .rp .tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+  .rp .tile { background:#f3f6fa; border-radius:8px; padding:10px 12px; }
+  .rp .tile small { color:#5b6878; font-size:11px; }
+  .rp .tile b { display:block; font-size:21px; margin:2px 0; }
+  .rp .tile em { font-style:normal; font-size:11px; color:#1f4e8c; }
+  .rp .two { display:grid; grid-template-columns:1.3fr 1fr; gap:14px; margin-bottom:16px; }
+  .rp h5 { margin:0 0 8px; font-size:13px; color:#18212d; }
+  .rp .map { height:170px; background:#eef3f8; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#5b6878; text-align:center; }
+  .rp .hb { display:grid; grid-template-columns:20px 54px 1fr 46px; gap:6px; align-items:center; margin:7px 0; font-size:12px; }
+  .rp .hb i { display:block; height:10px; background:#1f4e8c; border-radius:3px; }
+  .rp .hb span:first-child { color:#5b6878; }
+  .rp .hb span:last-child { text-align:right; }
+  .rp .foot { margin-top:14px; padding-top:8px; border-top:1px solid #dde3ea; color:#5b6878; font-size:11px; line-height:1.5; }
+</style>
+
+<div class="section">
+  <h3>① 대시보드: 404 고유 IP와 "의심 IP 제외" 스위치</h3>
+  <div class="mockup">
+    <div class="mockup-header">접속 국가 현황 (바뀐 부분)</div>
+    <div class="mockup-body">
+      <div class="m">
+        <div class="bar">
+          <span class="chip">최근 7일</span>
+          <span class="tg"><i></i>없는 URL만 요청한 IP 제외</span>
+          <span style="color:#5b6878">켜면 아래 모든 숫자·지도·보고서에서 빠집니다</span>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><small>전체 요청</small><b>4,812,330</b></div>
+          <div class="kpi"><small>해외 요청</small><b>96,104</b><small>전체의 2.0%</small></div>
+          <div class="kpi"><small>해외 고유 IP</small><b>3,472</b></div>
+          <div class="kpi new"><small>그중 404 보낸 IP</small><b>318</b><small>해외 IP의 9.2%</small></div>
+          <div class="kpi"><small>접속 국가 수</small><b>41</b></div>
+        </div>
+        <div class="panel">
+          <h4>국가별 상세</h4>
+          <table>
+            <tr><th>국가</th><th>요청 수</th><th>고유 IP</th><th>404 요청 수</th><th class="nw">404 보낸 고유 IP</th><th>최근 접속</th></tr>
+            <tr><td>미국</td><td>31,240</td><td>1,104</td><td>212</td><td class="nw">48</td><td>11/22 23:58</td></tr>
+            <tr><td>일본</td><td>19,402</td><td>688</td><td>35</td><td class="nw">9</td><td>11/22 23:51</td></tr>
+            <tr><td>중국</td><td>12,870</td><td>402</td><td>1,930</td><td class="nw">141</td><td>11/22 23:40</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>② 보고서 새 디자인 (A4 한 장)</h3>
+  <div class="mockup">
+    <div class="mockup-header">인쇄·PDF 저장용</div>
+    <div class="mockup-body" style="background:#e9ecef;padding:18px">
+      <div class="rp">
+        <div class="top"><h3>해외 접속 현황</h3><span>2026. 11. 16. ~ 11. 22. (7일)</span></div>
+        <div class="lead">지난 7일간 <b>41개국 3,154명(IP 기준)</b>이 해외에서 접속했습니다. 전체 요청의 <b>2.0%</b>이며, 미국·일본·중국이 해외 요청의 66%를 차지합니다.</div>
+        <div class="tiles">
+          <div class="tile"><small>해외 요청</small><b>93,870</b><em>전주 대비 +5.4%</em></div>
+          <div class="tile"><small>해외 접속 IP</small><b>3,154</b><em>전주 대비 +2.8%</em></div>
+          <div class="tile"><small>접속 국가</small><b>41</b><em>신규 2개국</em></div>
+          <div class="tile"><small>해외 비중</small><b>2.0%</b><em>전주 1.9%</em></div>
+        </div>
+        <div class="two">
+          <div><h5>국가별 분포</h5><div class="map">세계지도<br>요청이 많을수록 진하게</div></div>
+          <div>
+            <h5>상위 5개국</h5>
+            <div class="hb"><span>1</span><span>미국</span><i style="width:100%"></i><span>31,028</span></div>
+            <div class="hb"><span>2</span><span>일본</span><i style="width:62%"></i><span>19,367</span></div>
+            <div class="hb"><span>3</span><span>중국</span><i style="width:35%"></i><span>10,940</span></div>
+            <div class="hb"><span>4</span><span>베트남</span><i style="width:24%"></i><span>7,512</span></div>
+            <div class="hb"><span>5</span><span>독일</span><i style="width:15%"></i><span>4,690</span></div>
+          </div>
+        </div>
+        <h5>일별 추이</h5>
+        <svg viewBox="0 0 600 90" style="width:100%;height:90px">
+          <g stroke="#e6ebf0"><line x1="10" y1="15" x2="590" y2="15"/><line x1="10" y1="45" x2="590" y2="45"/><line x1="10" y1="75" x2="590" y2="75"/></g>
+          <polyline fill="none" stroke="#1f4e8c" stroke-width="2.5" points="20,55 113,48 206,58 299,36 392,42 485,20 580,32"/>
+        </svg>
+        <div class="foot">국가는 접속 IP 주소 기준으로 판별했으며, VPN 등으로 실제 위치와 다를 수 있습니다.<br>없는 주소만 요청한 IP 318개(공격 시도 추정)는 집계에서 제외했습니다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="options">
+    <div class="option" data-choice="ok" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content"><h3>이대로 진행</h3><p>두 수정 모두 괜찮음</p></div>
+    </div>
+    <div class="option" data-choice="change" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content"><h3>더 바꿀 곳 있음</h3><p>터미널에 적어주세요</p></div>
+    </div>
+  </div>
+</div>

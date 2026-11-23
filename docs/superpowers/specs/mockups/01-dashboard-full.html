@@ -1,0 +1,137 @@
+<h2>1단계 화면 구성안: 대시보드와 보고서</h2>
+<p class="subtitle">숫자는 모두 예시입니다. 배치와 담긴 항목이 맞는지 봐주세요. 색·글꼴 같은 마감은 나중에 다듬습니다.</p>
+
+<style>
+  .m { background:#fff; color:#1c2430; font-size:13px; padding:16px; font-family:system-ui,sans-serif; }
+  .m .bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+  .m .chip { border:1px solid #c9d1dc; border-radius:6px; padding:4px 10px; }
+  .m .chip.on { background:#1f4e8c; color:#fff; border-color:#1f4e8c; }
+  .m .sp { flex:1; }
+  .m .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+  .m .kpi { border:1px solid #dde3ea; border-radius:8px; padding:10px 12px; }
+  .m .kpi b { display:block; font-size:22px; margin-top:2px; }
+  .m .kpi small { color:#5b6878; }
+  .m .row { display:grid; gap:10px; margin-bottom:12px; }
+  .m .panel { border:1px solid #dde3ea; border-radius:8px; padding:10px 12px; min-width:0; }
+  .m .panel h4 { margin:0 0 8px; font-size:13px; }
+  .m .map { height:210px; border-radius:6px; background:#eef3f8; display:flex; align-items:center; justify-content:center; color:#5b6878; text-align:center; }
+  .m .hb { display:grid; grid-template-columns:64px 1fr 52px; gap:6px; align-items:center; margin:5px 0; }
+  .m .hb i { display:block; height:12px; background:#1f4e8c; border-radius:3px; }
+  .m .hb span:last-child { text-align:right; }
+  .m table { width:100%; border-collapse:collapse; }
+  .m th, .m td { text-align:right; padding:5px 8px; border-bottom:1px solid #e6ebf0; }
+  .m th:first-child, .m td:first-child { text-align:left; }
+  .m th { color:#5b6878; font-weight:600; }
+  .m .lg { display:flex; gap:14px; color:#5b6878; margin-top:4px; }
+  .m .lg i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; }
+  .a4 { background:#fff; color:#111; padding:28px 32px; font-family:serif; font-size:13px; max-width:620px; margin:0 auto; border:1px solid #ccc; }
+  .a4 h3 { text-align:center; font-size:19px; margin:0 0 4px; color:#111; }
+  .a4 .meta { text-align:center; color:#444; margin-bottom:16px; }
+  .a4 h5 { font-size:14px; margin:14px 0 6px; }
+  .a4 table { width:100%; border-collapse:collapse; }
+  .a4 th, .a4 td { border:1px solid #777; padding:4px 8px; text-align:right; }
+  .a4 th { background:#e9edf2; text-align:center; }
+  .a4 td:first-child { text-align:center; }
+  .a4 .fig { height:110px; border:1px dashed #999; display:flex; align-items:center; justify-content:center; color:#555; margin-top:8px; }
+</style>
+
+<div class="section">
+  <h3>① 대시보드 (매일 보는 화면)</h3>
+  <div class="mockup">
+    <div class="mockup-header">접속 국가 현황</div>
+    <div class="mockup-body">
+      <div class="m">
+        <div class="bar">
+          <span class="chip">어제</span><span class="chip on">최근 7일</span><span class="chip">최근 30일</span><span class="chip">기간 지정</span>
+          <span class="sp"></span>
+          <span>적재 현황: 11/22까지 · 서버 16/16</span>
+          <span class="chip">로그 적재</span><span class="chip">보고서 내보내기</span>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi"><small>전체 요청</small><b>4,812,330</b><small>전주 대비 +3.1%</small></div>
+          <div class="kpi"><small>해외 요청</small><b>96,104</b><small>전체의 2.0%</small></div>
+          <div class="kpi"><small>해외 고유 IP</small><b>3,472</b><small>국내 고유 IP 218,905</small></div>
+          <div class="kpi"><small>접속 국가 수</small><b>41</b><small>신규 국가 2</small></div>
+        </div>
+
+        <div class="row" style="grid-template-columns:1.6fr 1fr">
+          <div class="panel">
+            <h4>국가별 해외 요청 분포</h4>
+            <div class="map">세계지도<br>요청이 많은 국가일수록 진하게<br>국가에 마우스를 올리면 요청 수·고유 IP 표시</div>
+          </div>
+          <div class="panel">
+            <h4>해외 상위 10개국 (요청 수)</h4>
+            <div class="hb"><span>미국</span><i style="width:100%"></i><span>31,240</span></div>
+            <div class="hb"><span>일본</span><i style="width:62%"></i><span>19,402</span></div>
+            <div class="hb"><span>중국</span><i style="width:41%"></i><span>12,870</span></div>
+            <div class="hb"><span>베트남</span><i style="width:24%"></i><span>7,512</span></div>
+            <div class="hb"><span>독일</span><i style="width:15%"></i><span>4,690</span></div>
+            <div class="hb"><span>캐나다</span><i style="width:11%"></i><span>3,455</span></div>
+            <div class="hb"><span>기타 35개국</span><i style="width:54%;background:#9aa7b6"></i><span>16,935</span></div>
+          </div>
+        </div>
+
+        <div class="row" style="grid-template-columns:1fr">
+          <div class="panel">
+            <h4>일별 해외 요청 추이</h4>
+            <svg viewBox="0 0 700 120" style="width:100%;height:120px">
+              <g stroke="#e6ebf0"><line x1="30" y1="20" x2="690" y2="20"/><line x1="30" y1="60" x2="690" y2="60"/><line x1="30" y1="100" x2="690" y2="100"/></g>
+              <polyline fill="none" stroke="#1f4e8c" stroke-width="2" points="40,70 148,62 256,74 364,48 472,55 580,30 680,44"/>
+              <polyline fill="none" stroke="#c9792b" stroke-width="2" points="40,92 148,90 256,93 364,86 472,88 580,80 680,84"/>
+            </svg>
+            <div class="lg"><span><i style="background:#1f4e8c"></i>해외 요청 수</span><span><i style="background:#c9792b"></i>해외 고유 IP 수</span></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h4>국가별 상세 (열 제목을 누르면 정렬, 국가를 누르면 해당 국가의 IP 목록)</h4>
+          <table>
+            <tr><th>국가</th><th>요청 수</th><th>해외 중 비율</th><th>고유 IP</th><th>없는 URL 요청(404)</th><th>최근 접속</th></tr>
+            <tr><td>미국</td><td>31,240</td><td>32.5%</td><td>1,104</td><td>212</td><td>11/22 23:58</td></tr>
+            <tr><td>일본</td><td>19,402</td><td>20.2%</td><td>688</td><td>35</td><td>11/22 23:51</td></tr>
+            <tr><td>중국</td><td>12,870</td><td>13.4%</td><td>402</td><td>1,930</td><td>11/22 23:40</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>② 보고서 내보내기 (어르신 보고용, A4 한 장)</h3>
+  <div class="mockup">
+    <div class="mockup-header">인쇄·PDF 저장용</div>
+    <div class="mockup-body" style="background:#f0f0f0;padding:16px">
+      <div class="a4">
+        <h3>○○서비스 해외 접속 현황 보고</h3>
+        <div class="meta">집계 기간: 2026. 11. 16. ~ 11. 22. (7일간)</div>
+        <h5>□ 요약</h5>
+        <div>○ 전체 요청 4,812,330건 중 해외 요청은 96,104건(2.0%)임<br>○ 총 41개국에서 접속하였으며, 미국·일본·중국 순으로 많음<br>○ 전주 대비 해외 요청은 5.4% 증가함</div>
+        <h5>□ 국가별 접속 현황 (상위 5개국)</h5>
+        <table>
+          <tr><th>순위</th><th>국가</th><th>요청 수</th><th>비율</th><th>고유 IP</th></tr>
+          <tr><td>1</td><td>미국</td><td>31,240</td><td>32.5%</td><td>1,104</td></tr>
+          <tr><td>2</td><td>일본</td><td>19,402</td><td>20.2%</td><td>688</td></tr>
+          <tr><td>3</td><td>중국</td><td>12,870</td><td>13.4%</td><td>402</td></tr>
+        </table>
+        <h5>□ 시각 자료</h5>
+        <div class="fig">세계지도 + 일별 추이 그래프</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>이 구성으로 괜찮은지 골라주세요</h3>
+  <div class="options">
+    <div class="option" data-choice="ok" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content"><h3>이대로 진행</h3><p>항목과 배치가 맞음</p></div>
+    </div>
+    <div class="option" data-choice="change" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content"><h3>바꿀 곳 있음</h3><p>빼거나 더할 항목을 터미널에 적어주세요</p></div>
+    </div>
+  </div>
+</div>
