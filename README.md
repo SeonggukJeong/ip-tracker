@@ -50,7 +50,9 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-`v`로 시작하는 태그가 올라가면 `.github/workflows/release.yml`이 돌면서 `npm test`, `cargo test --workspace`, 빌드, 외부 주소 검사(`npm run check:offline`)를 차례로 통과시킨 뒤 NSIS 설치 파일을 만든다. 결과는 같은 태그의 GitHub 릴리즈에 초안으로 올라간다. 설치 파일을 내려받아 폐쇄망으로 반입하면 된다.
+`v`로 시작하는 태그가 올라가면 `.github/workflows/release.yml`이 돌면서 `npm test`, `cargo test --workspace`, 빌드, 외부 주소 검사(`npm run check:offline`)를 차례로 통과시킨 뒤 NSIS 설치 파일을 만든다. 결과는 같은 태그의 GitHub 릴리즈에 초안으로 올라간다. 설치 파일을 내려받아 폐쇄망으로 반입하면 된다. 초안은 GitHub 릴리즈 화면에서 내용을 확인한 뒤 공개한다.
+
+릴리즈 없이 Windows에서 테스트와 검사만 돌려 보고 싶으면 GitHub의 Actions 탭에서 `release` 워크플로를 수동 실행(Run workflow)한다. 이때는 설치 파일 만들기와 릴리즈 단계를 건너뛴다.
 
 외부 주소 검사는 `dist/` 안의 html, js, css에서 `http://`, `https://` 주소를 찾아, 허용 목록에 없는 것이 있으면 실패한다. 허용 목록은 `scripts/check-offline.mjs`에 있고, 실제 요청이 아닌 XML 네임스페이스와 라이브러리의 문구만 정확한 주소로 올려 두었다.
 
