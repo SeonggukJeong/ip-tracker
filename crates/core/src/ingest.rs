@@ -3,7 +3,7 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read};
+use std::io::{self, BufRead, BufReader, ErrorKind, Read};
 use std::net::IpAddr;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
@@ -173,7 +173,7 @@ fn is_blank(content: &[u8]) -> bool {
 
 /// 파일을 (gz면 풀어서) 한 줄씩 읽어 f(원래 바이트, 내용)를 부른다.
 /// 디스크에서 약 1MB를 더 읽을 때마다 on_progress(지금까지 읽은 디스크 바이트)를 부른다.
-/// 압축 해제 오류는 EOF로 보지 않고 그대로 Err로 돌려준다.
+/// 압축 해제 오류는 EOF로 보지 않고 Error::CorruptGz로 돌려준다.
 fn for_each_line(
     path: &Path,
     mut on_progress: impl FnMut(u64),
@@ -181,7 +181,16 @@ fn for_each_line(
 ) -> Result<(), Error> {
     let count = Rc::new(Cell::new(0));
     let counted = CountingReader { inner: File::open(path)?, count: Rc::clone(&count) };
-    let mut reader: Box<dyn BufRead> = if ends_with_gz(&file_name(path)) {
+    let name = file_name(path);
+    let is_gz = ends_with_gz(&name);
+    // flate2는 잘린 스트림을 UnexpectedEof로, 깨진 헤더·데이터·CRC를 InvalidInput/InvalidData로 알린다.
+    let read_error = |e: io::Error| match e.kind() {
+        ErrorKind::UnexpectedEof | ErrorKind::InvalidInput | ErrorKind::InvalidData if is_gz => {
+            Error::CorruptGz(name.clone())
+        }
+        _ => Error::Io(e),
+    };
+    let mut reader: Box<dyn BufRead> = if is_gz {
         Box::new(BufReader::new(MultiGzDecoder::new(BufReader::new(counted))))
     } else {
         Box::new(BufReader::new(counted))
@@ -191,7 +200,7 @@ fn for_each_line(
     let mut reported = 0;
     loop {
         buf.clear();
-        if reader.read_until(b'\n', &mut buf)? == 0 {
+        if reader.read_until(b'\n', &mut buf).map_err(read_error)? == 0 {
             return Ok(());
         }
         let flow = f(&buf, line_content(&buf, first))?;
@@ -718,8 +727,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let full = gz(&joined(&us_lines(500)));
         let f = write_bytes(dir.path(), "was01/access.log.gz", &full[..full.len() / 2]);
-        assert!(ingest_result(&mut conn, &geo, &parser, &f, ConflictPolicy::Ask, false).is_err());
+        let e = ingest_result(&mut conn, &geo, &parser, &f, ConflictPolicy::Ask, false).unwrap_err();
+        assert_eq!(e.to_string(), "압축 파일이 잘렸거나 손상됐습니다: access.log.gz");
         assert_eq!((count(&conn, "ingest_files"), count(&conn, "ip_daily")), (0, 0));
+        // 헤더부터 깨진 .gz도 같은 문구로 알린다.
+        let garbage = write_bytes(dir.path(), "was01/garbage.gz", b"not gzip at all\n");
+        let e = ingest_result(&mut conn, &geo, &parser, &garbage, ConflictPolicy::Ask, false).unwrap_err();
+        assert_eq!(e.to_string(), "압축 파일이 잘렸거나 손상됐습니다: garbage.gz");
     }
 
     #[test]
