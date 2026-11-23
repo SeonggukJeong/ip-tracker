@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:offline": "node scripts/check-offline.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.5",
