@@ -1,1 +1,4 @@
 .superpowers/
+target/
+node_modules/
+dist/
