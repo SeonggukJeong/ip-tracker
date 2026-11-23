@@ -956,7 +956,7 @@ export function reportFootnotes(a: { exclude404: boolean; excludedIps: number; g
 - 구현 전에 목업 `02-404-and-report-final.html`의 ② 보고서를 읽고 그 구성을 따른다. A4 세로 한 장: 제목 줄(제목 + 오른쪽에 `2026. 11. 16. ~ 11. 22. (7일)`) → 요약 문단 → 숫자 카드 4개 → 세계지도 + 상위 5개국 막대 → 일별 추이 → 하단 안내.
 - 숫자 카드(제목 / 값 / 보조): `해외 요청` / 건수 / `직전 기간 대비 {delta}`, `해외 접속 IP` / 개수 / `직전 기간 대비 {delta}`, `접속 국가` / 개수 / `신규 {n}개국`, `해외 비중` / 비율 / `직전 기간 {pct}`.
 - 요약 문단: `지난 {days}일간 {countries}개국 {foreignIps}개 IP가 해외에서 접속했습니다. 전체 요청의 {foreignShare}이며, 상위 {k}개국({이름·이름·이름})이 해외 요청의 {합계}를 차지합니다.` `k`는 `top`의 개수(최대 3). 해외 접속이 없으면 `지난 {days}일간 해외 접속이 없었습니다.`
-- 하단 안내(순서대로): `국가는 접속 IP 주소 기준으로 판별했으며, VPN 등으로 실제 위치와 다를 수 있습니다.` / (스위치가 켜졌을 때만) `404 응답을 받은 IP {n}개(공격 시도 추정)는 집계에서 제외했습니다.` / `IP 위치 정보: DB-IP (db-ip.com), CC BY 4.0, {geoBuildDate} 기준`.
+- 하단 안내(순서대로): `국가는 접속 IP 주소 기준으로 판별했으며, VPN 등으로 실제 위치와 다를 수 있습니다.` / (스위치가 켜졌을 때만) `404 응답을 받은 IP {n}개는 집계에서 제외했습니다.` / `IP 위치 정보: DB-IP (db-ip.com), CC BY 4.0, {geoBuildDate} 기준`.
 - 대시보드의 현재 기간과 스위치 상태를 그대로 쓴다.
 - 보고서 화면은 미리보기와 `인쇄 / PDF 저장` 버튼, `돌아가기` 버튼으로 구성한다. 버튼은 `window.print()`를 호출한다(Windows 인쇄 창에서 "Microsoft Print to PDF"를 고르면 PDF로 저장된다. 버튼 옆에 이 안내를 한 줄로 적는다).
 - 인쇄 CSS: `@page { size: A4 portrait; margin: 0; }`(여백이 0이면 WebView2가 날짜·주소·쪽번호 머리글·바닥글을 찍지 않는다). 보고서 루트는 `width: 210mm; min-height: 297mm; padding: 14mm; box-sizing: border-box`. `@media print`에서 버튼·탭을 숨기고 보고서만 한 장에 들어가게 한다. 흑백 인쇄에서도 구분되게 지도와 막대는 한 가지 색의 농도만 쓴다.
@@ -982,7 +982,7 @@ test("title and footnotes", () => {
   expect(reportTitle("민원24")).toBe("민원24 해외 접속 현황");
   expect(reportFootnotes({ exclude404: false, excludedIps: 318, geoBuildDate: "2026-11-01" })).toHaveLength(2);
   expect(reportFootnotes({ exclude404: true, excludedIps: 318, geoBuildDate: "2026-11-01" })[1])
-    .toBe("404 응답을 받은 IP 318개(공격 시도 추정)는 집계에서 제외했습니다.");
+    .toBe("404 응답을 받은 IP 318개는 집계에서 제외했습니다.");
 });
 ```
 

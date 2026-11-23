@@ -31,7 +31,7 @@ export function reportTitle(serviceName: string): string {
 /** 하단 안내. 404 제외 문구는 스위치가 켜졌을 때만 */
 export function reportFootnotes(a: { exclude404: boolean; excludedIps: number; geoBuildDate: string }): string[] {
   const notes = ["국가는 접속 IP 주소 기준으로 판별했으며, VPN 등으로 실제 위치와 다를 수 있습니다."];
-  if (a.exclude404) notes.push(`404 응답을 받은 IP ${num(a.excludedIps)}개(공격 시도 추정)는 집계에서 제외했습니다.`);
+  if (a.exclude404) notes.push(`404 응답을 받은 IP ${num(a.excludedIps)}개는 집계에서 제외했습니다.`);
   notes.push(`IP 위치 정보: DB-IP (db-ip.com), CC BY 4.0, ${a.geoBuildDate} 기준`);
   return notes;
 }

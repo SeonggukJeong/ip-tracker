@@ -18,7 +18,7 @@ test("title and footnotes", () => {
   expect(reportTitle("민원24")).toBe("민원24 해외 접속 현황");
   expect(reportFootnotes({ exclude404: false, excludedIps: 318, geoBuildDate: "2026-11-01" })).toHaveLength(2);
   expect(reportFootnotes({ exclude404: true, excludedIps: 318, geoBuildDate: "2026-11-01" })[1])
-    .toBe("404 응답을 받은 IP 318개(공격 시도 추정)는 집계에서 제외했습니다.");
+    .toBe("404 응답을 받은 IP 318개는 집계에서 제외했습니다.");
 });
 
 // 이하 추가 테스트(브리프 밖): 4개를 넘는 상위국은 3개까지만, 기간 표기, 하단 안내 전체 문구
@@ -36,7 +36,7 @@ test("period label", () => {
 test("footnotes in order", () => {
   expect(reportFootnotes({ exclude404: true, excludedIps: 1234, geoBuildDate: "2026-11-01" })).toEqual([
     "국가는 접속 IP 주소 기준으로 판별했으며, VPN 등으로 실제 위치와 다를 수 있습니다.",
-    "404 응답을 받은 IP 1,234개(공격 시도 추정)는 집계에서 제외했습니다.",
+    "404 응답을 받은 IP 1,234개는 집계에서 제외했습니다.",
     "IP 위치 정보: DB-IP (db-ip.com), CC BY 4.0, 2026-11-01 기준",
   ]);
   expect(reportTitle("  민원24 ")).toBe("민원24 해외 접속 현황");
