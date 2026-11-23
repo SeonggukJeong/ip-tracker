@@ -4,6 +4,7 @@ import { getIngestStatus, getSettings, type IngestStatus, type Settings } from "
 import { presetPeriod, todayKst, type ViewFilter } from "./lib/period";
 import { Dashboard } from "./screens/Dashboard";
 import { Ingest } from "./screens/Ingest";
+import { Report } from "./screens/Report";
 
 type Tab = "dashboard" | "ingest" | "settings";
 
@@ -15,6 +16,8 @@ const TABS: { key: Tab; label: string }[] = [
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("dashboard");
+  // 보고서는 탭이 아니라 대시보드에서 여는 화면이다. 열려 있는 동안 탭 줄을 숨긴다.
+  const [reporting, setReporting] = useState(false);
   const [filter, setFilter] = useState<ViewFilter>(() => ({
     preset: "7d",
     period: presetPeriod("7d", null, todayKst()),
@@ -45,23 +48,27 @@ export default function App() {
   }, [refreshKey]);
 
   return (
-    <div className="app">
-      <nav className="tabs">
-        <span className="brand">접속 국가 현황</span>
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            className={`tab${tab === t.key ? " on" : ""}`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+    <div className={reporting ? "app reporting" : "app"}>
+      {!reporting && (
+        <nav className="tabs">
+          <span className="brand">접속 국가 현황</span>
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              className={`tab${tab === t.key ? " on" : ""}`}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       <main className="content">
-        {tab === "dashboard" &&
+        {reporting && <Report filter={filter} onBack={() => setReporting(false)} />}
+        {!reporting &&
+          tab === "dashboard" &&
           (loadError ? (
             <p className="error">적재 현황을 불러오지 못했습니다: {loadError}</p>
           ) : status === null || settings === null ? (
@@ -74,13 +81,14 @@ export default function App() {
               expectedServers={settings.expectedServers}
               refreshKey={refreshKey}
               onOpenIngest={() => setTab("ingest")}
+              onOpenReport={() => setReporting(true)}
             />
           ))}
         {/* 적재 도중 다른 탭으로 가도 진행 상태가 사라지지 않게 항상 붙여 두고 숨기기만 한다. */}
-        <div hidden={tab !== "ingest"}>
-          <Ingest active={tab === "ingest"} onIngested={() => setRefreshKey((k) => k + 1)} />
+        <div hidden={reporting || tab !== "ingest"}>
+          <Ingest active={!reporting && tab === "ingest"} onIngested={() => setRefreshKey((k) => k + 1)} />
         </div>
-        {tab === "settings" && <p className="placeholder">설정 화면은 준비 중입니다.</p>}
+        {!reporting && tab === "settings" && <p className="placeholder">설정 화면은 준비 중입니다.</p>}
       </main>
     </div>
   );

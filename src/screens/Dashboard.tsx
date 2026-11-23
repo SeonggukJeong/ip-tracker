@@ -29,9 +29,10 @@ type Props = {
   expectedServers: number;
   refreshKey: number;
   onOpenIngest: () => void;
+  onOpenReport: () => void;
 };
 
-export function Dashboard({ filter, onFilterChange, status, expectedServers, refreshKey, onOpenIngest }: Props) {
+export function Dashboard({ filter, onFilterChange, status, expectedServers, refreshKey, onOpenIngest, onOpenReport }: Props) {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -93,7 +94,9 @@ export function Dashboard({ filter, onFilterChange, status, expectedServers, ref
         <button type="button" className="chip" onClick={onOpenIngest}>
           로그 적재
         </button>
-        {/* Task 10: 여기에 "보고서 내보내기" 버튼 */}
+        <button type="button" className="chip" onClick={onOpenReport}>
+          보고서 내보내기
+        </button>
       </div>
 
       <div className="bar">

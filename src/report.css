@@ -1,0 +1,169 @@
+/* 보고서(A4 세로 한 장). 크기는 mm로 고정해 화면 너비와 상관없이 인쇄 결과가 같게 한다.
+   본문 영역 182mm × 269mm(210×297에서 여백 14mm씩). 지도·막대는 주색 한 가지의 농도만 쓴다. */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+.report-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.report-scroll {
+  overflow-x: auto;
+  background: #e9ecef;
+  padding: 18px;
+  border-radius: 8px;
+}
+
+.report {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 14mm;
+  box-sizing: border-box;
+  margin: 0 auto;
+  background: #fff;
+  color: #18212d;
+  font-family: "Malgun Gothic", system-ui, sans-serif;
+  font-size: 10pt;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.report h1,
+.report h2,
+.report p {
+  margin: 0;
+}
+
+.rp-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 6mm;
+  border-bottom: 0.8mm solid var(--primary);
+  padding-bottom: 3mm;
+  margin-bottom: 6mm;
+}
+.rp-top h1 {
+  font-size: 17pt;
+  font-weight: 700;
+}
+.rp-top span {
+  color: var(--muted);
+  font-size: 9.5pt;
+  white-space: nowrap;
+}
+
+.rp-lead {
+  font-size: 12pt;
+  line-height: 1.65;
+  margin-bottom: 6mm;
+}
+
+.rp-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3.5mm;
+  margin-bottom: 7mm;
+}
+.rp-card {
+  background: var(--soft);
+  border-radius: 2mm;
+  padding: 3mm 3.5mm;
+}
+.rp-card small,
+.rp-card em {
+  display: block;
+  font-size: 8.5pt;
+  font-style: normal;
+}
+.rp-card small {
+  color: var(--muted);
+}
+.rp-card b {
+  display: block;
+  font-size: 17pt;
+  margin: 1mm 0;
+}
+.rp-card em {
+  color: var(--primary);
+}
+
+.report h2 {
+  font-size: 10.5pt;
+  font-weight: 700;
+  margin-bottom: 2.5mm;
+}
+
+.rp-two {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 6mm;
+  margin-bottom: 7mm;
+}
+.rp-two > section {
+  min-width: 0;
+}
+
+.rp-chart {
+  position: relative;
+  overflow: hidden;
+}
+.rp-pair {
+  height: 66mm;
+}
+.rp-trend {
+  height: 58mm;
+}
+.rp-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef3f8;
+  border-radius: 2mm;
+  color: var(--muted);
+}
+
+.rp-foot {
+  margin-top: 7mm;
+  padding-top: 3mm;
+  border-top: 0.3mm solid var(--border);
+  color: var(--muted);
+  font-size: 8.5pt;
+  line-height: 1.6;
+}
+
+/* 인쇄: 탭·버튼·안내를 모두 숨기고 보고서만 한 장에 찍는다. */
+@media print {
+  html,
+  body {
+    background: #fff;
+  }
+  .app.reporting > nav,
+  .app.reporting .content > :not(.report-screen),
+  .report-toolbar {
+    display: none !important;
+  }
+  .app.reporting .content {
+    padding: 0;
+  }
+  .report-scroll {
+    overflow: visible;
+    background: none;
+    padding: 0;
+    border-radius: 0;
+  }
+  .report {
+    margin: 0;
+    box-shadow: none;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
