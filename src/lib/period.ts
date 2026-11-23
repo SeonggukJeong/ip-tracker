@@ -38,3 +38,13 @@ export function periodDays(p: Period): number {
   const d = (toMs(p.to) - toMs(p.from)) / DAY_MS + 1;
   return Number.isFinite(d) && d > 0 ? Math.round(d) : 0;
 }
+
+/** date에서 months개월 전 날짜. 그 달에 같은 날이 없으면 말일로 맞춘다(8/31 − 6개월 → 2/28 또는 2/29) */
+export function monthsBefore(date: string, months: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const idx = y * 12 + (m - 1) - months;
+  const ty = Math.floor(idx / 12);
+  const tm = idx - ty * 12; // 0~11
+  const last = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate();
+  return fromMs(Date.UTC(ty, tm, Math.min(d, last)));
+}

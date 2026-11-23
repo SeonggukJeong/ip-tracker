@@ -557,3 +557,50 @@ input.server:disabled {
   gap: 8px;
   margin-top: 12px;
 }
+
+/* ---- 설정 ---- */
+.settings {
+  max-width: 760px;
+}
+.settings .panel p {
+  margin: 0 0 8px;
+}
+.set-form {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.set-form label {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.settings input:not([type="checkbox"]) {
+  border: 1px solid var(--chip);
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: #fff;
+}
+.settings input.narrow {
+  width: 80px;
+}
+.set-form .narrow {
+  justify-self: start;
+}
+.settings .hint {
+  margin: 0 0 6px 158px;
+  font-size: 12px;
+}
+.settings .panel > .hint {
+  margin-left: 0;
+}
+.set-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.settings h4.sub {
+  margin: 14px 0 8px;
+}

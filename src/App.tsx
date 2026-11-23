@@ -5,6 +5,7 @@ import { presetPeriod, todayKst, type ViewFilter } from "./lib/period";
 import { Dashboard } from "./screens/Dashboard";
 import { Ingest } from "./screens/Ingest";
 import { Report } from "./screens/Report";
+import { Settings as SettingsScreen } from "./screens/Settings";
 
 type Tab = "dashboard" | "ingest" | "settings";
 
@@ -88,7 +89,7 @@ export default function App() {
         <div hidden={reporting || tab !== "ingest"}>
           <Ingest active={!reporting && tab === "ingest"} onIngested={() => setRefreshKey((k) => k + 1)} />
         </div>
-        {!reporting && tab === "settings" && <p className="placeholder">설정 화면은 준비 중입니다.</p>}
+        {!reporting && tab === "settings" && <SettingsScreen onChanged={() => setRefreshKey((k) => k + 1)} />}
       </main>
     </div>
   );
