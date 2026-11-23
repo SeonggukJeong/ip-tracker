@@ -22,10 +22,11 @@ type Geo = { type: "FeatureCollection"; features: { properties: { ISO_A2_EH: str
 
 // 남극은 해외 접속과 관계없이 지도 아래쪽 공간만 차지하므로 뺀다.
 const geo = world as unknown as Geo;
-echarts.registerMap("world", {
-  ...geo,
-  features: geo.features.filter((f) => f.properties.ISO_A2_EH !== "AQ"),
-} as unknown as Parameters<typeof echarts.registerMap>[1]);
+const features = geo.features.filter((f) => f.properties.ISO_A2_EH !== "AQ");
+echarts.registerMap("world", { ...geo, features } as unknown as Parameters<typeof echarts.registerMap>[1]);
+
+/** 지도에 실제로 그려지는 국가 코드. 110m 지도에는 작은 나라(SG, HK, MO, BH, MT 등)가 없다. */
+export const MAP_CODES: ReadonlySet<string> = new Set(features.map((f) => f.properties.ISO_A2_EH));
 
 export { echarts };
 

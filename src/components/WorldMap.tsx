@@ -2,7 +2,7 @@
 import { useMemo } from "react";
 import type { CountryRow } from "../api";
 import { countryName } from "../lib/countryName";
-import { COLORS, esc } from "../lib/echarts";
+import { COLORS, esc, MAP_CODES } from "../lib/echarts";
 import { num } from "../lib/format";
 import { type ChartCommon, useEChart } from "./useEChart";
 
@@ -15,7 +15,8 @@ export function WorldMap({ rows, height, renderer = "canvas", animation = true }
       .map((r) => ({ name: r.country, value: r.requests, ips: r.ips }));
     // 한국과 코드가 없는 지역(-99)은 툴팁을 띄우지 않는다.
     for (const name of ["KR", "-99"]) data.push({ name, tooltip: { show: false }, emphasis: { disabled: true } });
-    const max = Math.max(1, ...data.map((d) => d.value ?? 0));
+    // 지도에 없는 나라가 1위여도 그려지는 나라 중 1위가 가장 진한 색이 되게, 그려지는 나라만으로 최댓값을 구한다.
+    const max = Math.max(1, ...data.filter((d) => MAP_CODES.has(d.name)).map((d) => d.value ?? 0));
     return {
       tooltip: {
         trigger: "item",
