@@ -106,7 +106,12 @@ export type AppInfo = {
   geoIsBundled: boolean;
   dbPath: string;
   dbBytes: number;
+  /** 설정된 DB를 열지 못해 기본 위치를 쓰는 중이면 안내 문구 */
+  dbWarning: string | null;
 };
+
+/** set_db_path 뒤 쓰는 명령(적재·정리·설정 저장·DB 위치 변경)이 돌려주는 오류 */
+export const DB_MOVED_ERROR = "DB 위치를 바꿨습니다. 앱을 다시 시작해 주세요.";
 
 // ---- 명령 ----
 

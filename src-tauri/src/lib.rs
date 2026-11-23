@@ -37,7 +37,7 @@ pub fn run() {
         // 적재 중이라 연결이 잠겨 있으면 기다리지 않는다(남은 -wal은 다음 적재·정리 때 비워진다).
         if let RunEvent::Exit = event {
             if let Some(s) = handle.try_state::<state::AppState>() {
-                if let Ok(conn) = s.conn.try_lock() {
+                if let Some(conn) = s.db.try_lock() {
                     let _ = iptracker_core::db::compact(&conn);
                 }
             }

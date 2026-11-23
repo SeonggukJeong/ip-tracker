@@ -5,7 +5,7 @@ use std::fmt::Display;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
-use std::sync::{Mutex, RwLock};
+use std::sync::RwLock;
 
 use iptracker_core::geo::GeoDb;
 use iptracker_core::ingest::{self, Candidate, ConflictPolicy, IngestOptions, IngestOutcome, Preview};
@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::config::{self, Config};
-use crate::state::{lock, AppState, LOCAL_GEOIP_FILE};
+use crate::state::{AppState, Db, LOCAL_GEOIP_FILE};
 
 const UNRECOGNIZED: &str = "로그 형식을 인식하지 못했습니다. 설정에서 LogFormat을 지정해 주세요.";
 const DEFAULT_EXPECTED_SERVERS: u32 = 16;
@@ -58,6 +58,8 @@ pub struct AppInfo {
     pub db_path: String,
     /// .db와 -wal 크기의 합
     pub db_bytes: u64,
+    /// 설정된 DB를 열지 못해 기본 위치를 쓰는 중이면 안내 문구
+    pub db_warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -109,8 +111,9 @@ pub fn do_save_settings(conn: &Connection, s: &Settings) -> Result<(), String> {
     tx.commit().map_err(err)
 }
 
-pub fn do_scan(conn: &Connection, paths: &[PathBuf]) -> Result<Vec<Candidate>, String> {
-    let s = do_get_settings(conn)?;
+/// 저장된 정규식만 잠금을 잡고 읽고, 폴더 탐색은 잠금 없이 한다.
+pub fn do_scan(db: &Db, paths: &[PathBuf]) -> Result<Vec<Candidate>, String> {
+    let s = do_get_settings(&db.lock())?;
     let re = match given(Some(&s.server_regex)) {
         Some(re) => Some(regex::Regex::new(re).map_err(|e| format!("서버 이름 정규식이 올바르지 않습니다: {e}"))?),
         None => None,
@@ -156,7 +159,7 @@ pub fn do_preview(
 /// 삭제에 실패해도 적재는 그대로 두고 delete_error로 알린다.
 #[allow(clippy::too_many_arguments)]
 pub fn do_ingest(
-    conn: &Mutex<Connection>,
+    db: &Db,
     geo: &RwLock<GeoDb>,
     candidate: &Candidate,
     opts: &IngestOptions,
@@ -167,7 +170,7 @@ pub fn do_ingest(
     delete: fn(&Path) -> io::Result<()>,
 ) -> Result<IngestResult, String> {
     let outcome = {
-        let mut conn = lock(conn);
+        let mut conn = db.lock_for_write()?;
         let result = resolve_parser(&conn, &candidate.path, log_format, time_format)
             .and_then(|p| p.ok_or_else(|| UNRECOGNIZED.to_string()))
             .and_then(|parser| {
@@ -192,7 +195,7 @@ fn file_len(p: &Path) -> u64 {
     std::fs::metadata(p).map(|m| m.len()).unwrap_or(0)
 }
 
-pub fn do_app_info(geo: &GeoDb, geo_is_bundled: bool, db_path: &Path) -> AppInfo {
+pub fn do_app_info(geo: &GeoDb, geo_is_bundled: bool, db_path: &Path, db_warning: Option<&str>) -> AppInfo {
     let mut wal = db_path.as_os_str().to_owned();
     wal.push("-wal");
     AppInfo {
@@ -201,6 +204,7 @@ pub fn do_app_info(geo: &GeoDb, geo_is_bundled: bool, db_path: &Path) -> AppInfo
         geo_is_bundled,
         db_path: db_path.display().to_string(),
         db_bytes: file_len(db_path) + file_len(Path::new(&wal)),
+        db_warning: db_warning.map(str::to_string),
     }
 }
 
@@ -222,12 +226,16 @@ pub fn do_replace_geoip(geo: &RwLock<GeoDb>, src: &Path, local_data_dir: &Path) 
 }
 
 /// 현재 DB를 dest에 복사한 뒤 config.json에 기록한다. 다음 실행부터 적용된다.
-pub fn do_set_db_path(conn: &Connection, dest: &Path, config_dir: &Path) -> Result<(), String> {
-    db::copy_to(conn, dest).map_err(|e| format!("DB를 새 위치에 복사하지 못했습니다: {e}"))?;
+/// 성공하면 db에 "위치를 바꿈"을 표시해 이후의 쓰기(적재·정리·설정 저장·다시 옮기기)를 거부한다.
+pub fn do_set_db_path(db: &Db, dest: &Path, config_dir: &Path) -> Result<(), String> {
+    let conn = db.lock_for_write()?;
+    db::copy_to(&conn, dest).map_err(|e| format!("DB를 새 위치에 복사하지 못했습니다: {e}"))?;
     config::save(config_dir, &Config { db_path: Some(dest.to_path_buf()) }).map_err(|e| {
         let _ = std::fs::remove_file(dest);
         format!("설정 파일을 저장하지 못했습니다: {e}")
-    })
+    })?;
+    db.mark_moved();
+    Ok(())
 }
 
 // ---- Tauri 명령 ----
@@ -247,7 +255,7 @@ fn remove_original(p: &Path) -> io::Result<()> {
 
 #[tauri::command]
 pub async fn scan_paths(app: AppHandle, paths: Vec<PathBuf>) -> Result<Vec<Candidate>, String> {
-    run(app, move |s| do_scan(&lock(&s.conn), &paths)).await
+    run(app, move |s| do_scan(&s.db, &paths)).await
 }
 
 #[tauri::command]
@@ -257,7 +265,7 @@ pub async fn preview_file(
     log_format: Option<String>,
     time_format: Option<String>,
 ) -> Result<Preview, String> {
-    run(app, move |s| do_preview(&lock(&s.conn), &path, log_format.as_deref(), time_format.as_deref())).await
+    run(app, move |s| do_preview(&s.db.lock(), &path, log_format.as_deref(), time_format.as_deref())).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -279,7 +287,7 @@ pub async fn ingest_one(
         };
         let opts = IngestOptions { conflict, allow_high_failure };
         do_ingest(
-            &s.conn,
+            &s.db,
             &s.geo,
             &candidate,
             &opts,
@@ -295,17 +303,17 @@ pub async fn ingest_one(
 
 #[tauri::command]
 pub async fn get_kpis(app: AppHandle, filter: Filter) -> Result<Kpis, String> {
-    run(app, move |s| query::kpis(&lock(&s.conn), &filter).map_err(err)).await
+    run(app, move |s| query::kpis(&s.db.lock(), &filter).map_err(err)).await
 }
 
 #[tauri::command]
 pub async fn get_countries(app: AppHandle, filter: Filter) -> Result<Vec<CountryRow>, String> {
-    run(app, move |s| query::countries(&lock(&s.conn), &filter).map_err(err)).await
+    run(app, move |s| query::countries(&s.db.lock(), &filter).map_err(err)).await
 }
 
 #[tauri::command]
 pub async fn get_daily(app: AppHandle, filter: Filter) -> Result<Vec<DayPoint>, String> {
-    run(app, move |s| query::daily(&lock(&s.conn), &filter).map_err(err)).await
+    run(app, move |s| query::daily(&s.db.lock(), &filter).map_err(err)).await
 }
 
 #[tauri::command]
@@ -316,7 +324,7 @@ pub async fn get_country_ips(
     limit: u32,
     offset: u32,
 ) -> Result<Vec<IpRow>, String> {
-    run(app, move |s| query::country_ips(&lock(&s.conn), &filter, &country, limit, offset).map_err(err)).await
+    run(app, move |s| query::country_ips(&s.db.lock(), &filter, &country, limit, offset).map_err(err)).await
 }
 
 #[tauri::command]
@@ -327,27 +335,27 @@ pub async fn get_ip_requests(
     limit: u32,
     offset: u32,
 ) -> Result<Vec<RequestRow>, String> {
-    run(app, move |s| query::ip_requests(&lock(&s.conn), &period, &ip, limit, offset).map_err(err)).await
+    run(app, move |s| query::ip_requests(&s.db.lock(), &period, &ip, limit, offset).map_err(err)).await
 }
 
 #[tauri::command]
 pub async fn get_ingest_status(app: AppHandle) -> Result<IngestStatus, String> {
-    run(app, |s| query::ingest_status(&lock(&s.conn)).map_err(err)).await
+    run(app, |s| query::ingest_status(&s.db.lock()).map_err(err)).await
 }
 
 #[tauri::command]
 pub async fn get_settings(app: AppHandle) -> Result<Settings, String> {
-    run(app, |s| do_get_settings(&lock(&s.conn))).await
+    run(app, |s| do_get_settings(&s.db.lock())).await
 }
 
 #[tauri::command]
 pub async fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
-    run(app, move |s| do_save_settings(&lock(&s.conn), &settings)).await
+    run(app, move |s| do_save_settings(&*s.db.lock_for_write()?, &settings)).await
 }
 
 fn app_info_of(s: &AppState) -> AppInfo {
     let geo = s.geo.read().unwrap_or_else(|e| e.into_inner());
-    do_app_info(&geo, s.geo_is_bundled.load(Ordering::Relaxed), &s.db_path)
+    do_app_info(&geo, s.geo_is_bundled.load(Ordering::Relaxed), &s.db_path, s.db_warning.as_deref())
 }
 
 #[tauri::command]
@@ -368,12 +376,12 @@ pub async fn replace_geoip(app: AppHandle, path: PathBuf) -> Result<AppInfo, Str
 /// 지운 뒤 db::compact까지 한다(purge_foreign_before 안에서).
 #[tauri::command]
 pub async fn purge_foreign(app: AppHandle, before_date: String) -> Result<usize, String> {
-    run(app, move |s| ingest::purge_foreign_before(&lock(&s.conn), &before_date).map_err(err)).await
+    run(app, move |s| ingest::purge_foreign_before(&*s.db.lock_for_write()?, &before_date).map_err(err)).await
 }
 
 #[tauri::command]
 pub async fn set_db_path(app: AppHandle, path: PathBuf) -> Result<(), String> {
-    run(app, move |s| do_set_db_path(&lock(&s.conn), &path, &s.config_dir)).await
+    run(app, move |s| do_set_db_path(&s.db, &path, &s.config_dir)).await
 }
 
 #[cfg(test)]
@@ -384,13 +392,14 @@ mod tests {
     use iptracker_core::logformat::{COMBINED, COMMON};
     use std::io;
     use std::path::{Path, PathBuf};
-    use std::sync::{Mutex, RwLock};
+    use crate::state::DB_MOVED;
+    use std::sync::RwLock;
 
     const GEO: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/resources/dbip-country-lite.mmdb");
     const UNRECOGNIZED: &str = "로그 형식을 인식하지 못했습니다. 설정에서 LogFormat을 지정해 주세요.";
 
-    fn deps() -> (Mutex<Connection>, RwLock<GeoDb>) {
-        (Mutex::new(db::open_in_memory().unwrap()), RwLock::new(GeoDb::open(Path::new(GEO)).unwrap()))
+    fn deps() -> (Db, RwLock<GeoDb>) {
+        (Db::new(db::open_in_memory().unwrap()), RwLock::new(GeoDb::open(Path::new(GEO)).unwrap()))
     }
     fn write(dir: &Path, rel: &str, lines: &[String]) -> PathBuf {
         let p = dir.join(rel);
@@ -404,7 +413,7 @@ mod tests {
             .collect()
     }
     fn ingest(
-        conn: &Mutex<Connection>,
+        conn: &Db,
         geo: &RwLock<GeoDb>,
         p: &Path,
         delete: fn(&Path) -> io::Result<()>,
@@ -445,7 +454,7 @@ mod tests {
         assert!(!r.deleted);
         assert!(r.delete_error.is_some());
         assert!(p.exists());
-        let rows: i64 = conn.lock().unwrap().query_row("SELECT count(*) FROM ip_daily", [], |r| r.get(0)).unwrap();
+        let rows: i64 = conn.lock().query_row("SELECT count(*) FROM ip_daily", [], |r| r.get(0)).unwrap();
         assert!(rows > 0);
     }
 
@@ -480,11 +489,11 @@ mod tests {
     fn scan_applies_saved_server_regex() {
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "logs/was07_a.log", &us_lines());
-        let conn = db::open_in_memory().unwrap();
-        assert_eq!(do_scan(&conn, std::slice::from_ref(&p)).unwrap()[0].server, "logs");
-        let s = Settings { server_regex: r"^(was\d+)_".into(), ..do_get_settings(&conn).unwrap() };
-        do_save_settings(&conn, &s).unwrap();
-        let c = do_scan(&conn, &[p]).unwrap();
+        let db = Db::new(db::open_in_memory().unwrap());
+        assert_eq!(do_scan(&db, std::slice::from_ref(&p)).unwrap()[0].server, "logs");
+        let s = Settings { server_regex: r"^(was\d+)_".into(), ..do_get_settings(&db.lock()).unwrap() };
+        do_save_settings(&db.lock(), &s).unwrap();
+        let c = do_scan(&db, &[p]).unwrap();
         assert_eq!((c[0].server.as_str(), c[0].filename.as_str()), ("was07", "was07_a.log"));
     }
 
@@ -496,7 +505,7 @@ mod tests {
         assert_eq!(ingest(&conn, &geo, &p, remove).unwrap_err(), UNRECOGNIZED);
         assert!(p.exists());
         // 미리보기는 오류 대신 "형식 없음"을 돌려줘 화면이 직접 지정 칸을 띄울 수 있게 한다.
-        let preview = do_preview(&conn.lock().unwrap(), &p, None, None).unwrap();
+        let preview = do_preview(&conn.lock(), &p, None, None).unwrap();
         assert_eq!((preview.log_format, preview.rows.len(), preview.sampled, preview.failed), (None, 0, 2, 2));
     }
 
@@ -549,16 +558,40 @@ mod tests {
     fn set_db_path_copies_then_records() {
         let dir = tempfile::tempdir().unwrap();
         let cfg_dir = dir.path().join("cfg");
-        let conn = db::open(&dir.path().join("a.db")).unwrap();
-        db::set_setting(&conn, "service_name", "복사됨").unwrap();
+        let db = Db::new(db::open(&dir.path().join("a.db")).unwrap());
+        db::set_setting(&db.lock(), "service_name", "복사됨").unwrap();
+
+        // 복사가 실패하면(대상이 이미 있음) 설정을 만들지 않고 쓰기도 계속 된다.
+        let existing = dir.path().join("a.db");
+        assert!(do_set_db_path(&db, &existing, &cfg_dir).is_err());
+        assert_eq!(config::load(&cfg_dir).db_path, None);
+        assert!(db.lock_for_write().is_ok());
+
         let dest = dir.path().join("b.db");
-        do_set_db_path(&conn, &dest, &cfg_dir).unwrap();
+        do_set_db_path(&db, &dest, &cfg_dir).unwrap();
         assert_eq!(config::load(&cfg_dir).db_path.as_deref(), Some(dest.as_path()));
         assert_eq!(db::get_setting(&db::open(&dest).unwrap(), "service_name").unwrap().as_deref(), Some("복사됨"));
+    }
 
-        // 복사가 실패하면(대상이 이미 있음) 설정은 그대로다.
-        let other = dir.path().join("a.db");
-        assert!(do_set_db_path(&conn, &other, &cfg_dir).is_err());
-        assert_eq!(config::load(&cfg_dir).db_path.as_deref(), Some(dest.as_path()));
+    #[test]
+    fn writes_are_refused_after_db_moved() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg_dir = dir.path().join("cfg");
+        let (db, geo) = deps();
+        do_set_db_path(&db, &dir.path().join("b.db"), &cfg_dir).unwrap();
+
+        // 적재·정리·설정 저장(모두 lock_for_write를 거침)과 다시 옮기기는 거부한다.
+        let p = write(dir.path(), "was01/access.log", &us_lines());
+        assert_eq!(ingest(&db, &geo, &p, remove).unwrap_err(), DB_MOVED);
+        assert!(p.exists(), "거부되면 원본도 지우지 않는다");
+        assert_eq!(db.lock_for_write().err().as_deref(), Some(DB_MOVED));
+        assert_eq!(do_set_db_path(&db, &dir.path().join("c.db"), &cfg_dir).unwrap_err(), DB_MOVED);
+        assert!(!dir.path().join("c.db").exists());
+        assert_eq!(config::load(&cfg_dir).db_path.as_deref(), Some(dir.path().join("b.db").as_path()));
+
+        // 읽기는 계속 된다.
+        assert_eq!(do_get_settings(&db.lock()).unwrap().expected_servers, 16);
+        assert_eq!(query::ingest_status(&db.lock()).unwrap().file_count, 0);
+        assert_eq!(do_scan(&db, &[p]).unwrap().len(), 1);
     }
 }
