@@ -26,7 +26,8 @@ export function DailyTrend({
     const axisLabel = { color: COLORS.muted, formatter: (v: number) => num(v) };
     return {
       color: keys.map((k) => SERIES[k].color),
-      grid: { left: 8, right: 8, top: 28, bottom: keys.length > 1 ? 28 : 4, containLabel: true },
+      // x축 끝 날짜 글자는 축 끝을 중심으로 찍혀 절반이 오른쪽으로 나간다. 오른쪽 y축이 없으면 그만큼 여백을 둔다.
+      grid: { left: 8, right: keys.length > 1 ? 8 : 24, top: 28, bottom: keys.length > 1 ? 28 : 4, containLabel: true },
       legend: keys.length > 1 ? { bottom: 0, icon: "roundRect", itemWidth: 10, itemHeight: 10, textStyle: { color: COLORS.muted } } : undefined,
       tooltip: {
         trigger: "axis",
