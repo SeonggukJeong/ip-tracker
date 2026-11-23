@@ -9,7 +9,7 @@ use iptracker_core::ingest::{
     detect_file, ingest_file, scan, ConflictPolicy, IngestOptions, IngestOutcome,
 };
 use iptracker_core::query::{ingest_status, kpis, Filter, Period};
-use loggen::{generate, GenConfig, COUNTRY_PREFIXES};
+use loggen::{country_prefixes, generate, GenConfig};
 use rusqlite::Connection;
 
 fn mmdb() -> GeoDb {
@@ -32,7 +32,9 @@ fn count(conn: &Connection, table: &str) -> i64 {
 fn country_samples_match_bundled_geoip() {
     let geo = mmdb();
     let mut bad = Vec::new();
-    for (iso, prefix) in COUNTRY_PREFIXES {
+    let prefixes = country_prefixes();
+    assert!(prefixes.iter().filter(|(iso, _)| *iso == "KR").count() >= 200);
+    for (iso, prefix) in &prefixes {
         for last in [1, 254] {
             let ip = format!("{prefix}.{last}").parse().unwrap();
             let o = geo.classify(ip);
@@ -44,7 +46,7 @@ fn country_samples_match_bundled_geoip() {
     }
     assert!(bad.is_empty(), "내장 DB와 맞지 않는 접두사: {bad:#?}");
     for iso in ["US", "JP", "CN", "VN", "DE", "CA", "GB", "FR", "SG", "AU", "IN", "BR", "KR"] {
-        assert!(COUNTRY_PREFIXES.iter().any(|(c, _)| *c == iso), "{iso} 없음");
+        assert!(prefixes.iter().any(|(c, _)| *c == iso), "{iso} 없음");
     }
 }
 
