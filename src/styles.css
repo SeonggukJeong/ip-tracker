@@ -161,6 +161,32 @@ input {
   outline-offset: 2px;
 }
 
+/* 새 조건으로 다시 읽는 동안: 이전 내용을 흐리게 하고 누를 수 없게 한다. */
+.dash-body.loading > :not(.loading-badge) {
+  opacity: 0.45;
+  pointer-events: none;
+}
+/* 높이 0인 sticky 줄이라 자리를 차지하지 않고, 아래로 스크롤해도 위에 보인다. */
+.loading-badge {
+  position: sticky;
+  top: 12px;
+  height: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+  overflow: visible;
+}
+.loading-badge span {
+  margin-top: 8px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  box-shadow: 0 2px 8px rgba(28, 36, 48, 0.12);
+  white-space: nowrap;
+}
+
 .kpis {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

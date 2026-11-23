@@ -9,7 +9,7 @@ import { Notices } from "../components/Notices";
 import { TopCountries } from "../components/TopCountries";
 import { WorldMap } from "../components/WorldMap";
 import { monthDay, num } from "../lib/format";
-import { type Preset, presetPeriod, todayKst, type ViewFilter } from "../lib/period";
+import { checkCustomPeriod, MIN_DATE, type Preset, presetPeriod, todayKst, type ViewFilter } from "../lib/period";
 
 const PRESETS: { key: Preset; label: string }[] = [
   { key: "latest", label: "최근 적재일" },
@@ -20,7 +20,8 @@ const PRESETS: { key: Preset; label: string }[] = [
 
 const EMPTY = "해당 기간에 데이터가 없습니다";
 
-type Data = { kpis: Kpis; countries: CountryRow[]; daily: DayPoint[] };
+/** exclude404: 이 데이터를 만든 조회의 값. 핵심 숫자의 분모 계산이 스위치의 현재 값과 섞이지 않게 함께 둔다. */
+type Data = { kpis: Kpis; countries: CountryRow[]; daily: DayPoint[]; exclude404: boolean };
 
 type Props = {
   filter: ViewFilter;
@@ -34,6 +35,7 @@ type Props = {
 
 export function Dashboard({ filter, onFilterChange, status, expectedServers, refreshKey, onOpenIngest, onOpenReport }: Props) {
   const [data, setData] = useState<Data | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -41,12 +43,31 @@ export function Dashboard({ filter, onFilterChange, status, expectedServers, ref
   const { exclude404 } = filter;
   const query: Filter = useMemo(() => ({ period: { from, to }, exclude404 }), [from, to, exclude404]);
 
+  // 기간 지정 입력칸의 값. 검사를 통과한 것만 조회 조건(filter)에 올린다.
+  const [draft, setDraft] = useState({ from, to });
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  useEffect(() => {
+    setDraft({ from, to });
+    setRangeError(null);
+  }, [from, to]);
+
   useEffect(() => {
     let live = true;
+    setLoading(true);
     setError(null);
     Promise.all([getKpis(query), getCountries(query), getDaily(query)]).then(
-      ([kpis, countries, daily]) => live && setData({ kpis, countries, daily }),
-      (e) => live && setError(String(e)),
+      ([kpis, countries, daily]) => {
+        if (!live) return;
+        setData({ kpis, countries, daily, exclude404: query.exclude404 });
+        setLoading(false);
+      },
+      (e) => {
+        if (!live) return;
+        // 이전 조건의 데이터를 새 조건의 것처럼 남겨 두지 않는다.
+        setData(null);
+        setError(String(e));
+        setLoading(false);
+      },
     );
     return () => {
       live = false;
@@ -55,12 +76,18 @@ export function Dashboard({ filter, onFilterChange, status, expectedServers, ref
 
   const choosePreset = (preset: Preset) => {
     const period = preset === "custom" ? filter.period : presetPeriod(preset, status.latestDate, todayKst());
+    setDraft(period);
+    setRangeError(null);
     onFilterChange({ ...filter, preset, period });
   };
 
-  // 시작일이 종료일보다 늦어지지 않게 다른 쪽을 맞춘다.
-  const setFrom = (v: string) => v && onFilterChange({ ...filter, period: { from: v, to: v > to ? v : to } });
-  const setTo = (v: string) => v && onFilterChange({ ...filter, period: { from: v < from ? v : from, to: v } });
+  const setRange = (next: { from: string; to: string }) => {
+    setDraft(next);
+    const check = checkCustomPeriod(next.from, next.to);
+    // 입력 중(빈 칸 등)이면 문구 없이 조회만 하지 않는다.
+    setRangeError(check.ok ? null : check.error);
+    if (check.ok) onFilterChange({ ...filter, period: check.period });
+  };
 
   const ingestText =
     status.latestDate === null
@@ -84,11 +111,24 @@ export function Dashboard({ filter, onFilterChange, status, expectedServers, ref
         ))}
         {filter.preset === "custom" && (
           <span className="range">
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="시작일" />
+            <input
+              type="date"
+              min={MIN_DATE}
+              value={draft.from}
+              onChange={(e) => setRange({ ...draft, from: e.target.value })}
+              aria-label="시작일"
+            />
             <span>~</span>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} aria-label="종료일" />
+            <input
+              type="date"
+              min={MIN_DATE}
+              value={draft.to}
+              onChange={(e) => setRange({ ...draft, to: e.target.value })}
+              aria-label="종료일"
+            />
           </span>
         )}
+        {filter.preset === "custom" && rangeError && <span className="error">{rangeError}</span>}
         <span className="sp" />
         <span className="muted">{ingestText}</span>
         <button type="button" className="chip" onClick={onOpenIngest}>
@@ -116,8 +156,13 @@ export function Dashboard({ filter, onFilterChange, status, expectedServers, ref
       {data === null ? (
         !error && <p className="muted">불러오는 중…</p>
       ) : (
-        <>
-          <KpiTiles kpis={data.kpis} exclude404={exclude404} />
+        <div className={loading ? "dash-body loading" : "dash-body"} aria-busy={loading}>
+          {loading && (
+            <div className="loading-badge" role="status">
+              <span>불러오는 중…</span>
+            </div>
+          )}
+          <KpiTiles kpis={data.kpis} exclude404={data.exclude404} />
           {data.kpis.unknownRequests > 0 && (
             <p className="note">국가를 판별하지 못한 요청 {num(data.kpis.unknownRequests)}건은 집계에서 제외했습니다.</p>
           )}
@@ -142,7 +187,7 @@ export function Dashboard({ filter, onFilterChange, status, expectedServers, ref
             <h4>국가별 상세 (열 제목을 누르면 정렬, 국가를 누르면 해당 국가의 IP 목록)</h4>
             {empty ? <div className="empty">{EMPTY}</div> : <CountryTable rows={data.countries} onSelect={setSelected} />}
           </section>
-        </>
+        </div>
       )}
 
       <Notices />

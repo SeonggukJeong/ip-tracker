@@ -39,6 +39,30 @@ export function periodDays(p: Period): number {
   return Number.isFinite(d) && d > 0 ? Math.round(d) : 0;
 }
 
+/** 기간 지정에서 받는 가장 이른 날짜 */
+export const MIN_DATE = "2000-01-01";
+/** 기간 지정의 최대 일수(양끝 포함) */
+export const MAX_PERIOD_DAYS = 366;
+
+/** "YYYY-MM-DD"이고 달력에 있는 날짜인지 */
+function isDate(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(toMs(s)) && fromMs(toMs(s)) === s;
+}
+
+/** ok=false이고 error=null이면 아직 입력 중(빈 칸 등)이라 조용히 무시한다. */
+export type PeriodCheck = { ok: true; period: Period } | { ok: false; error: string | null };
+
+/** 기간 지정 입력 검사. 통과하지 못하면 조회하지 않는다. */
+export function checkCustomPeriod(from: string, to: string): PeriodCheck {
+  if (!isDate(from) || !isDate(to)) return { ok: false, error: null };
+  if (from < MIN_DATE || to < MIN_DATE) return { ok: false, error: `${MIN_DATE} 이후 날짜를 지정해 주세요.` };
+  if (from > to) return { ok: false, error: "시작일이 종료일보다 늦습니다." };
+  if (periodDays({ from, to }) > MAX_PERIOD_DAYS) {
+    return { ok: false, error: `기간은 최대 ${MAX_PERIOD_DAYS}일까지 지정할 수 있습니다.` };
+  }
+  return { ok: true, period: { from, to } };
+}
+
 /** date에서 months개월 전 날짜. 그 달에 같은 날이 없으면 말일로 맞춘다(8/31 − 6개월 → 2/28 또는 2/29) */
 export function monthsBefore(date: string, months: number): string {
   const [y, m, d] = date.split("-").map(Number);
