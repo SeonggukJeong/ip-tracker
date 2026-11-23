@@ -19,7 +19,6 @@ CREATE TABLE ip_daily(
   requests INTEGER NOT NULL, not_found INTEGER NOT NULL,
   first_ts INTEGER NOT NULL, last_ts INTEGER NOT NULL,
   PRIMARY KEY(date, file_id, ip)) WITHOUT ROWID;
-CREATE INDEX idx_ip_daily_ip ON ip_daily(ip, date);
 CREATE INDEX idx_ip_daily_file ON ip_daily(file_id);
 CREATE TABLE user_agents(id INTEGER PRIMARY KEY, ua TEXT NOT NULL UNIQUE);
 CREATE TABLE foreign_requests(
