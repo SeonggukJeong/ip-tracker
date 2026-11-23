@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { getIngestStatus, getSettings, type IngestStatus, type Settings } from "./api";
 import { presetPeriod, todayKst, type ViewFilter } from "./lib/period";
 import { Dashboard } from "./screens/Dashboard";
+import { Ingest } from "./screens/Ingest";
 
 type Tab = "dashboard" | "ingest" | "settings";
 
@@ -22,8 +23,8 @@ export default function App() {
   const [status, setStatus] = useState<IngestStatus | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // 적재가 끝나면 올려서 적재 현황과 대시보드를 다시 읽는다. 올리는 쪽(적재 화면)은 Task 9에서 붙인다.
-  const [refreshKey] = useState(0);
+  // 적재가 끝나면 올려서 적재 현황과 대시보드를 다시 읽는다.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -75,9 +76,10 @@ export default function App() {
               onOpenIngest={() => setTab("ingest")}
             />
           ))}
-        {tab === "ingest" && (
-          <p className="placeholder">로그 적재 화면은 준비 중입니다.</p>
-        )}
+        {/* 적재 도중 다른 탭으로 가도 진행 상태가 사라지지 않게 항상 붙여 두고 숨기기만 한다. */}
+        <div hidden={tab !== "ingest"}>
+          <Ingest active={tab === "ingest"} onIngested={() => setRefreshKey((k) => k + 1)} />
+        </div>
         {tab === "settings" && <p className="placeholder">설정 화면은 준비 중입니다.</p>}
       </main>
     </div>

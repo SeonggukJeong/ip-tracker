@@ -60,3 +60,17 @@ export function monthDay(date: string): string {
   const [, m, d] = date.split("-").map(Number);
   return Number.isFinite(m) && Number.isFinite(d) ? `${m}/${d}` : date;
 }
+
+/** 파일 크기: 812 → "812 B", 1536 → "1.5 KB", 52428800 → "50.0 MB" */
+export function bytes(n: number): string {
+  const v = Number.isFinite(n) && n > 0 ? n : 0;
+  if (v < 1024) return `${num(v)} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let x = v / 1024;
+  let i = 0;
+  while (x >= 1024 && i < units.length - 1) {
+    x /= 1024;
+    i++;
+  }
+  return `${x.toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${units[i]}`;
+}

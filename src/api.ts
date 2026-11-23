@@ -5,7 +5,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 // ---- 적재 (iptracker_core::ingest) ----
 
-export type Candidate = { path: string; server: string; filename: string };
+/** size: 디스크상 바이트(gz는 압축된 크기), 목록 표시용 */
+export type Candidate = { path: string; server: string; filename: string; size: number };
 
 /** time: "YYYY-MM-DD HH:MM:SS" KST */
 export type PreviewRow = { ip: string; time: string; method: string; url: string; status: number };

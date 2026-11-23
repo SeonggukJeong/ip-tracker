@@ -35,6 +35,9 @@ pub struct Candidate {
     pub server: String,
     /// 끝의 ".gz"를 뗀 파일 이름
     pub filename: String,
+    /// 디스크상 크기(바이트, gz는 압축된 크기). 목록 표시용이라 적재 때는 쓰지 않는다.
+    #[serde(default)]
+    pub size: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,7 +137,8 @@ pub fn scan(paths: &[PathBuf], server_regex: Option<&regex::Regex>) -> Vec<Candi
                 .and_then(|c| c.get(1))
                 .map(|m| m.as_str().to_string());
             let server = from_regex.unwrap_or_else(|| path.parent().map(file_name).unwrap_or_default());
-            Candidate { path, server, filename }
+            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            Candidate { path, server, filename, size }
         })
         .collect()
 }
@@ -534,6 +538,9 @@ mod tests {
             cs.iter().map(|c| (c.server.as_str(), c.filename.as_str())).collect::<Vec<_>>(),
             vec![("was01", "access.2026-11-22"), ("was02", "access.2026-11-22")]
         );
+        let on_disk = std::fs::metadata(dir.path().join("was02/access.2026-11-22.gz")).unwrap().len();
+        assert_eq!(cs[1].size, on_disk);
+        assert!(cs[0].size > 0);
     }
 
     #[test]

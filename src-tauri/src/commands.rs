@@ -184,7 +184,8 @@ pub fn do_ingest(
     let (deleted, delete_error) = match (&outcome, delete_original) {
         (IngestOutcome::Ingested(_), true) => match delete(&candidate.path) {
             Ok(()) => (true, None),
-            Err(e) => (false, Some(format!("원본 파일을 지우지 못했습니다: {e}"))),
+            // 화면이 "적재는 완료했지만 원본을 지우지 못했습니다: {오류}"로 감싸므로 OS 오류 문구만 넘긴다.
+            Err(e) => (false, Some(e.to_string())),
         },
         _ => (false, None),
     };
