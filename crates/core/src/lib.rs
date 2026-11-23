@@ -1,3 +1,4 @@
+pub mod db;
 pub mod geo;
 pub mod logformat;
 
@@ -7,6 +8,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("GeoIP 오류: {0}")]
     Geo(#[from] maxminddb::MaxMindDbError),
+    #[error("DB 오류: {0}")]
+    Db(#[from] rusqlite::Error),
     #[error("{0}")]
     Other(String),
 }
