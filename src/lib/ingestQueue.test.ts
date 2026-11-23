@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import type { Candidate, IngestOutcome, IngestResult } from "../api";
+import { type Candidate, type IngestOutcome, type IngestResult, KEPT_HIGH_FAILURE } from "../api";
 import { type Decision, type Row, runQueue } from "./ingestQueue";
 
 type Policy = "ask" | "replace" | "skip";
@@ -112,4 +112,12 @@ test("delete failure is carried on the row", async () => {
   expect(rows[0].summary?.foreignRequests).toBe(7);
   // 화면은 "적재 중"을 먼저 받고 마지막에 결과를 받는다
   expect(updates.map(([i, r]) => [i, r.state])).toEqual([[0, "적재 중"], [0, "완료"]]);
+});
+
+test("original kept after accepted high failure gets its own message", async () => {
+  const { deps } = setup((_n, _c, allow) =>
+    allow ? res(ingested(), { deleted: false, deleteError: KEPT_HIGH_FAILURE }) : res(highFailure()),
+  );
+  const rows = await runQueue([cand("a")], deps);
+  expect(rows[0]).toMatchObject({ state: "완료", deleted: false, message: "실패 줄이 많아 원본을 남겼습니다." });
 });

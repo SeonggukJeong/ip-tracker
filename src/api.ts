@@ -34,6 +34,9 @@ export type IngestOutcome =
 
 export type IngestResult = { outcome: IngestOutcome; deleted: boolean; deleteError?: string };
 
+/** 실패 줄이 많은데 허락받아 적재한 파일은 지우지 않고 deleteError로 이 값을 보낸다(commands.rs KEPT_HIGH_FAILURE). */
+export const KEPT_HIGH_FAILURE = "실패 줄이 많아 원본을 남겼습니다";
+
 /** 이벤트 "ingest-progress" */
 export type IngestProgress = { path: string; bytesRead: number; bytesTotal: number };
 

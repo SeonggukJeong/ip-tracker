@@ -55,11 +55,11 @@ function HighFailureBody({ p }: { p: Extract<Prompt, { kind: "highFailure" }> })
         </>
       )}
       <div className="modal-actions">
-        <button type="button" className="btn primary" onClick={() => p.resolve(true)}>
-          그래도 적재
-        </button>
-        <button type="button" className="btn" onClick={() => p.resolve(false)}>
+        <button type="button" className="btn primary" onClick={() => p.resolve(false)}>
           이 파일 건너뛰기
+        </button>
+        <button type="button" className="btn" onClick={() => p.resolve(true)}>
+          그래도 적재
         </button>
       </div>
     </>

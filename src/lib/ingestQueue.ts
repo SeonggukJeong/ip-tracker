@@ -1,6 +1,6 @@
 // 적재 순서 로직. 화면과 분리해 테스트한다.
 // 파일을 하나씩 순서대로 넣고, 충돌·실패 줄 과다는 물어본 뒤 같은 파일을 다시 호출한다.
-import type { Candidate, ConflictPolicy, FileSummary, IngestResult } from "../api";
+import { type Candidate, type ConflictPolicy, type FileSummary, type IngestResult, KEPT_HIGH_FAILURE } from "../api";
 
 export type Decision = "replace" | "skip";
 export type RowState = "대기" | "적재 중" | "완료" | "중복(건너뜀)" | "건너뜀" | "실패";
@@ -26,7 +26,8 @@ async function runOne(c: Candidate, deps: QueueDeps, shared: { decided: Decision
       case "ingested": {
         const { kind: _, ...summary } = outcome;
         const row: Row = { candidate: c, state: "완료", summary, deleted };
-        if (deleteError) row.message = `적재는 완료했지만 원본을 지우지 못했습니다: ${deleteError}`;
+        if (deleteError === KEPT_HIGH_FAILURE) row.message = `${KEPT_HIGH_FAILURE}.`;
+        else if (deleteError) row.message = `적재는 완료했지만 원본을 지우지 못했습니다: ${deleteError}`;
         return row;
       }
       case "duplicate":

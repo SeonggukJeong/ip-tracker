@@ -21,6 +21,8 @@ use crate::state::{AppState, Db, LOCAL_GEOIP_FILE};
 
 const UNRECOGNIZED: &str = "로그 형식을 인식하지 못했습니다. 설정에서 LogFormat을 지정해 주세요.";
 const DEFAULT_EXPECTED_SERVERS: u32 = 16;
+/// 화면(src/lib/ingestQueue.ts)이 이 값을 알아보고 삭제 실패 문구 대신 그대로 보여준다.
+pub const KEPT_HIGH_FAILURE: &str = "실패 줄이 많아 원본을 남겼습니다";
 
 const KEY_SERVICE_NAME: &str = "service_name";
 const KEY_EXPECTED_SERVERS: &str = "expected_servers";
@@ -157,6 +159,7 @@ pub fn do_preview(
 
 /// 적재 후 delete_original이고 결과가 Ingested일 때만 delete(원본)를 부른다.
 /// 삭제에 실패해도 적재는 그대로 두고 delete_error로 알린다.
+/// 실패 줄이 많은데 허락받아 적재한 경우에는 지우지 않고 delete_error = KEPT_HIGH_FAILURE.
 #[allow(clippy::too_many_arguments)]
 pub fn do_ingest(
     db: &Db,
@@ -182,6 +185,10 @@ pub fn do_ingest(
         result?
     };
     let (deleted, delete_error) = match (&outcome, delete_original) {
+        // 실패 줄 경고를 무릅쓰고 적재한 파일은 형식을 다시 확인할 수 있게 원본을 남긴다.
+        (IngestOutcome::Ingested(s), true) if opts.allow_high_failure && s.failed_lines * 100 > s.lines => {
+            (false, Some(KEPT_HIGH_FAILURE.to_string()))
+        }
         (IngestOutcome::Ingested(_), true) => match delete(&candidate.path) {
             Ok(()) => (true, None),
             // 화면이 "적재는 완료했지만 원본을 지우지 못했습니다: {오류}"로 감싸므로 OS 오류 문구만 넘긴다.
@@ -457,6 +464,23 @@ mod tests {
         assert!(p.exists());
         let rows: i64 = conn.lock().query_row("SELECT count(*) FROM ip_daily", [], |r| r.get(0)).unwrap();
         assert!(rows > 0);
+    }
+
+    #[test]
+    fn accepted_high_failure_keeps_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let (conn, geo) = deps();
+        let mut lines = us_lines();
+        lines.push("읽을 수 없는 줄".to_string());
+        let p = write(dir.path(), "was01/access.log", &lines);
+        let c = scan(&[p.clone()], None).remove(0);
+        let opts = IngestOptions { conflict: ConflictPolicy::Ask, allow_high_failure: true };
+        let r = do_ingest(&conn, &geo, &c, &opts, true, Some(COMBINED), None, &mut |_, _| {}, remove).unwrap();
+        let IngestOutcome::Ingested(s) = &r.outcome else { panic!("{:?}", r.outcome) };
+        assert_eq!((s.lines, s.failed_lines), (11, 1));
+        assert!(!r.deleted);
+        assert_eq!(r.delete_error.as_deref(), Some("실패 줄이 많아 원본을 남겼습니다"));
+        assert!(p.exists());
     }
 
     #[test]
