@@ -4,7 +4,7 @@
 
 **Goal:** Apache access 로그를 적재해 국가별 요청 수·고유 IP 수를 보여주고 A4 보고서를 내보내는, 인터넷 없이 동작하는 Windows용 Tauri 앱을 만든다.
 
-**Architecture:** Tauri 의존이 없는 Rust 라이브러리 `core`가 로그 파싱, 국가 판별, SQLite 적재, 집계 질의를 모두 담당한다. `src-tauri`는 `core`를 Tauri 명령으로 감싸는 얇은 층이고, 화면은 React + ECharts로 명령만 호출한다. 가짜 로그 생성기 `loggen`이 실제 로그를 대신해 개발·검증에 쓰인다.
+**Architecture:** Tauri 의존이 없는 Rust 라이브러리 `iptracker-core`(코드에서는 `iptracker_core`)가 로그 파싱, 국가 판별, SQLite 적재, 집계 질의를 모두 담당한다. `src-tauri`는 이 라이브러리를 Tauri 명령으로 감싸는 얇은 층이고, 화면은 React + ECharts로 명령만 호출한다. 가짜 로그 생성기 `loggen`이 실제 로그를 대신해 개발·검증에 쓰인다.
 
 **Tech Stack:** Rust 1.97, Tauri 2, rusqlite(bundled), maxminddb, flate2, chrono, regex, sha2 / Vite, React 18, TypeScript, ECharts 5, Vitest / GitHub Actions(windows-latest, NSIS)
 
@@ -22,7 +22,9 @@
 - "404를 낸 IP" = 선택 기간 안에 상태코드 404 응답이 1건 이상인 IP. 제외 스위치는 국내·해외 모두에 적용한다.
 - 고유 IP는 사람 수가 아니다. 문구에 "명"을 쓰지 않고 "IP"를 쓴다.
 - 보고서에 개조식(□, ○) 양식을 쓰지 않는다.
-- 커밋 메시지는 한국어, 끝에 `Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>`.
+- 커밋 메시지는 한국어, 끝에 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- 라이브러리 크레이트 이름은 `iptracker-core`(경로 `crates/core`). `core`라는 패키지 이름은 Rust 내장 크레이트를 가려 매크로가 깨지므로 쓰지 않는다.
+- 앱 데이터(DB, 교체한 GeoIP)는 Windows 로밍 폴더가 아닌 로컬 폴더(`app_local_data_dir`)에 둔다.
 
 **설계 문서와 다른 점 한 가지:** 설계 문서의 `country_hourly` 테이블은 만들지 않는다. 1단계 화면에 시간대별 차트가 없고, 국가 단위 요약으로는 "404를 낸 IP 제외"를 적용할 수 없기 때문이다. 일별 추이는 `ip_daily`에서 구한다. (설계 문서도 같이 수정함.)
 
@@ -61,7 +63,7 @@ scripts/check-offline.mjs          빌드 결과에 외부 URL이 없는지 검�
 
 ---
 
-### Task 1: 로그 형식 해석과 줄 파싱 (`core::logformat`)
+### Task 1: 로그 형식 해석과 줄 파싱 (`iptracker_core::logformat`)
 
 **Files:**
 - Create: `Cargo.toml`, `crates/core/Cargo.toml`, `crates/core/src/lib.rs`, `crates/core/src/logformat.rs`
@@ -89,12 +91,16 @@ impl LineParser {
     pub fn log_format(&self) -> &str;
 }
 /// 비어 있지 않은 표본 줄로 형식을 고른다. 후보 중 성공률이 가장 높고 0.9 이상인 것.
-pub fn detect(sample: &[String]) -> Option<LineParser>;
+/// time_format이 Some이면 모든 후보 LogFormat에 그 시간 형식을 쓴다.
+pub fn detect(sample: &[String], time_format: Option<&str>) -> Option<LineParser>;
 #[derive(Debug, thiserror::Error)] pub enum FormatError { MissingIp, MissingTime, MissingStatus }
 ```
 
 **정해 둔 값:**
-- 지원 지시자: `%h`·`%a`(클라이언트 IP, 형식에 먼저 나온 것 사용), `%t`, `%{형식}t`, `%r`, `%s`·`%>s`, `%b`·`%B`·`%O`, `%{User-Agent}i`. 그 밖의 `%...` 지시자는 값을 읽고 버린다. 따옴표로 감싼 필드는 `\"`를 이스케이프로 처리해 닫는 따옴표까지 읽고, 감싸지 않은 필드는 공백 전까지 읽는다. `%t`는 `[`…`]`로 감싼 값을 읽는다.
+- 지원 지시자: `%h`·`%a`(클라이언트 IP, 형식에 먼저 나온 것 사용), `%t`, `%{형식}t`, `%r`, `%s`·`%>s`, `%b`·`%B`·`%O`, `%{User-Agent}i`. 그 밖의 `%...` 지시자는 값을 읽고 버린다.
+- 형식 문자열에서 지시자가 아닌 문자(공백, `"`, `[`, `]` 등)는 리터럴이며 줄의 같은 위치 문자와 그대로 대조한다. 따옴표 리터럴 안의 필드는 `\"`를 이스케이프로 처리해 닫는 따옴표까지 읽는다. 그 밖의 필드는 형식상 다음 리터럴 문자가 나오기 전까지 읽는다(마지막 필드면 줄 끝까지).
+- 시간: Apache는 `%t`를 `[22/Nov/2026:23:58:01 +0900]`처럼 **대괄호를 포함해** 출력하므로 `%t`는 `[`…`]`를 스스로 읽는다. `%{형식}t`는 대괄호 없이 출력되므로(실제 설정은 `[%{...}t]`처럼 대괄호를 리터럴로 씀) 대괄호를 읽지 않고, 중괄호 안의 형식을 그 필드의 시간 형식으로 쓴다(`time_format` 인자보다 우선). `%{형식}t` 값은 형식 안의 공백 수 + 1개의 공백 구분 덩어리를 읽는다.
+- `parse`는 줄 끝의 `\r`을 먼저 떼어 낸다(Windows에서 저장한 CRLF 파일 대비).
 - `TIME_FORMATS`(순서대로 시도): `%d/%b/%Y:%H:%M:%S %z`, `%d/%b/%Y:%H:%M:%S`, `%Y-%m-%d %H:%M:%S%.f`, `%Y-%m-%d %H:%M:%S,%3f`, `%Y-%m-%dT%H:%M:%S%z`, `%Y-%m-%dT%H:%M:%S`. 시간대가 없으면 `+09:00`.
 - `detect` 후보: `COMBINED`, `COMMON`, `COMBINED + " %D"`, `"%v " + COMBINED`.
 - `new`는 형식에 IP·시간·상태코드 지시자가 없으면 각각의 `FormatError`를 돌려준다.
@@ -117,10 +123,25 @@ const L_COMBINED: &str = r#"203.0.113.7 - - [22/Nov/2026:23:58:01 +0900] "GET /a
         .parse(r#"10.0.0.5 - - [22/Nov/2026:00:00:00 +0900] "POST /login HTTP/1.1" 404 -"#).unwrap();
     assert_eq!((r.status, r.bytes, r.user_agent), (404, None, None));
 }
-#[test] fn time_without_zone_is_kst() {
-    let p = LineParser::new(r#"%h %{%Y-%m-%d %H:%M:%S}t "%r" %>s"#, Some("%Y-%m-%d %H:%M:%S")).unwrap();
+#[test] fn custom_time_directive_with_and_without_literal_brackets() {
+    let p = LineParser::new(r#"%h [%{%Y-%m-%d %H:%M:%S}t] "%r" %>s"#, None).unwrap();
     let r = p.parse(r#"1.2.3.4 [2026-11-23 14:00:03] "GET / HTTP/1.1" 200"#).unwrap();
-    assert_eq!(r.ts.to_rfc3339(), "2026-11-23T14:00:03+09:00");
+    assert_eq!(r.ts.to_rfc3339(), "2026-11-23T14:00:03+09:00"); // 시간대 없음 → KST
+    let q = LineParser::new(r#"%h %{%Y-%m-%d %H:%M:%S}t "%r" %>s"#, None).unwrap();
+    let r = q.parse(r#"1.2.3.4 2026-11-23 14:00:03 "GET / HTTP/1.1" 200"#).unwrap();
+    assert_eq!((r.ts.to_rfc3339().as_str(), r.status), ("2026-11-23T14:00:03+09:00", 200));
+}
+#[test] fn given_time_format_applies_to_percent_t() {
+    let line = r#"1.2.3.4 - - [23.11.2026 14:00:03] "GET / HTTP/1.1" 200 1"#;
+    let p = LineParser::new(COMMON, Some("%d.%m.%Y %H:%M:%S")).unwrap();
+    assert_eq!(p.parse(line).unwrap().ts.to_rfc3339(), "2026-11-23T14:00:03+09:00");
+    let s = vec![line.to_string(); 10];
+    assert!(detect(&s, None).is_none());
+    assert_eq!(detect(&s, Some("%d.%m.%Y %H:%M:%S")).unwrap().log_format(), COMMON);
+}
+#[test] fn trailing_cr_is_ignored() {
+    let r = LineParser::new(COMBINED, None).unwrap().parse(&format!("{L_COMBINED}\r")).unwrap();
+    assert_eq!(r.user_agent.as_deref(), Some("okhttp/4.9.3"));
 }
 #[test] fn ipv6_and_mapped_addresses_parse() {
     let p = LineParser::new(COMMON, None).unwrap();
@@ -150,21 +171,21 @@ const L_COMBINED: &str = r#"203.0.113.7 - - [22/Nov/2026:23:58:01 +0900] "GET /a
 }
 #[test] fn detect_picks_combined_then_common() {
     let s = vec![L_COMBINED.to_string(); 10];
-    assert_eq!(detect(&s).unwrap().log_format(), COMBINED);
+    assert_eq!(detect(&s, None).unwrap().log_format(), COMBINED);
     let c = vec![r#"10.0.0.5 - - [22/Nov/2026:00:00:00 +0900] "GET / HTTP/1.1" 200 1"#.to_string(); 10];
-    assert_eq!(detect(&c).unwrap().log_format(), COMMON);
-    assert!(detect(&vec!["zzz".to_string(); 10]).is_none());
+    assert_eq!(detect(&c, None).unwrap().log_format(), COMMON);
+    assert!(detect(&vec!["zzz".to_string(); 10], None).is_none());
 }
 ```
 
-- [ ] **Step 2: 실패 확인** — `cargo test -p core logformat` → 컴파일 오류(`LineParser` 없음).
-- [ ] **Step 3: 구현** — 워크스페이스와 `core` 크레이트(패키지 이름 `core`, 의존성 `chrono`, `thiserror`)를 만들고 위 인터페이스를 구현한다. `LogFormat` 문자열을 토큰 목록으로 한 번 컴파일하고, `parse`는 토큰을 따라 줄을 왼쪽에서 오른쪽으로 읽는다(정규식 미사용).
-- [ ] **Step 4: 통과 확인** — `cargo test -p core logformat` → 9 passed.
+- [ ] **Step 2: 실패 확인** — `cargo test -p iptracker-core logformat` → 컴파일 오류(`LineParser` 없음).
+- [ ] **Step 3: 구현** — 워크스페이스와 `crates/core` 크레이트(패키지 이름 `iptracker-core`. Rust 내장 `core`를 가리므로 `core`라는 이름은 쓰지 않는다. 의존성 `chrono`, `thiserror`)를 만들고 위 인터페이스를 구현한다. `LogFormat` 문자열을 토큰 목록으로 한 번 컴파일하고, `parse`는 토큰을 따라 줄을 왼쪽에서 오른쪽으로 읽는다(정규식 미사용).
+- [ ] **Step 4: 통과 확인** — `cargo test -p iptracker-core logformat` → 11 passed.
 - [ ] **Step 5: 커밋** — `git add -A && git commit -m "access 로그 형식 해석과 줄 파싱 추가"`
 
 ---
 
-### Task 2: 국가 판별 (`core::geo`)과 GeoIP DB 내장
+### Task 2: 국가 판별 (`iptracker_core::geo`)과 GeoIP DB 내장
 
 **Files:**
 - Create: `crates/core/src/geo.rs`, `src-tauri/resources/dbip-country-lite.mmdb`, `src-tauri/resources/GEOIP-ATTRIBUTION.txt`
@@ -215,14 +236,14 @@ fn c(ip: &str) -> Origin { db().classify(ip.parse().unwrap()) }
 #[test] fn open_missing_file_is_error() { assert!(GeoDb::open(std::path::Path::new("/nonexistent.mmdb")).is_err()); }
 ```
 
-- [ ] **Step 3: 실패 확인** — `cargo test -p core geo` → 컴파일 오류.
+- [ ] **Step 3: 실패 확인** — `cargo test -p iptracker-core geo` → 컴파일 오류.
 - [ ] **Step 4: 구현** — `maxminddb::Reader`로 파일을 메모리에 읽어 들인다. `crate::Error`(`thiserror`, `Io`/`Geo`/`Db`/`Other(String)` 변형)를 `lib.rs`에 정의한다.
-- [ ] **Step 5: 통과 확인** — `cargo test -p core geo` → 7 passed.
+- [ ] **Step 5: 통과 확인** — `cargo test -p iptracker-core geo` → 7 passed.
 - [ ] **Step 6: 커밋** — `git add -A && git commit -m "GeoIP DB 내장과 IP 국가 분류 추가"`
 
 ---
 
-### Task 3: DB 스키마와 설정 값 (`core::db`)
+### Task 3: DB 스키마와 설정 값 (`iptracker_core::db`)
 
 **Files:**
 - Create: `crates/core/src/db.rs`
@@ -235,6 +256,10 @@ pub fn open(path: &std::path::Path) -> Result<rusqlite::Connection, crate::Error
 pub fn open_in_memory() -> Result<rusqlite::Connection, crate::Error>;            // 테스트용
 pub fn get_setting(conn: &rusqlite::Connection, key: &str) -> Result<Option<String>, crate::Error>;
 pub fn set_setting(conn: &rusqlite::Connection, key: &str, value: &str) -> Result<(), crate::Error>;
+/// PRAGMA incremental_vacuum 후 wal_checkpoint(TRUNCATE). 삭제·대체·적재 뒤에 호출해 파일 크기를 실제로 줄인다.
+pub fn compact(conn: &rusqlite::Connection) -> Result<(), crate::Error>;
+/// VACUUM INTO로 현재 DB를 dest에 복사한다(WAL 내용 포함). dest가 이미 있으면 오류.
+pub fn copy_to(conn: &rusqlite::Connection, dest: &std::path::Path) -> Result<(), crate::Error>;
 pub const SCHEMA_VERSION: i32 = 1;
 ```
 
@@ -265,6 +290,7 @@ CREATE INDEX idx_fr_date ON foreign_requests(date);
 CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 ```
 - `date`는 KST 기준 `YYYY-MM-DD`, `ts`류는 유닉스 초(UTC), `class`는 `OriginClass` 값, `ip`는 `IpAddr::to_string()`(IPv4-mapped는 IPv4 표기).
+- 새 DB를 만들 때는 **테이블을 만들기 전에** `PRAGMA auto_vacuum=INCREMENTAL`을 켠다(나중에는 켤 수 없음. 이게 없으면 오래된 상세를 지워도 파일이 줄지 않는다).
 - 열 때마다 `PRAGMA foreign_keys=ON`, `PRAGMA journal_mode=WAL`. 버전은 `PRAGMA user_version`으로 관리하고, 버전별 마이그레이션 SQL 배열을 순서대로 적용한다(2·3단계에서 항목을 추가하는 구조).
 
 - [ ] **Step 1: 실패하는 테스트 작성**
@@ -291,6 +317,20 @@ CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
     set_setting(&c, "x", "1").unwrap(); set_setting(&c, "x", "2").unwrap();
     assert_eq!(get_setting(&c, "x").unwrap().as_deref(), Some("2"));
 }
+#[test] fn new_db_uses_incremental_auto_vacuum() {
+    let dir = tempfile::tempdir().unwrap();
+    let c = open(&dir.path().join("a.db")).unwrap();
+    let v: i32 = c.query_row("PRAGMA auto_vacuum", [], |r| r.get(0)).unwrap();
+    assert_eq!(v, 2);
+}
+#[test] fn copy_to_includes_uncheckpointed_data() {
+    let dir = tempfile::tempdir().unwrap();
+    let c = open(&dir.path().join("a.db")).unwrap();
+    set_setting(&c, "k", "v").unwrap();
+    copy_to(&c, &dir.path().join("b.db")).unwrap();
+    assert_eq!(get_setting(&open(&dir.path().join("b.db")).unwrap(), "k").unwrap().as_deref(), Some("v"));
+    assert!(copy_to(&c, &dir.path().join("b.db")).is_err());
+}
 #[test] fn deleting_a_file_cascades() {
     let c = open_in_memory().unwrap();
     c.execute("INSERT INTO ingest_files(id,server,filename,sha256,lines,failed_lines,ingested_at) VALUES(1,'s','f','h',1,0,0)", []).unwrap();
@@ -301,14 +341,14 @@ CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 }
 ```
 
-- [ ] **Step 2: 실패 확인** — `cargo test -p core db` → 컴파일 오류.
+- [ ] **Step 2: 실패 확인** — `cargo test -p iptracker-core db` → 컴파일 오류.
 - [ ] **Step 3: 구현** (dev-dependency `tempfile`).
-- [ ] **Step 4: 통과 확인** — `cargo test -p core db` → 4 passed.
+- [ ] **Step 4: 통과 확인** — `cargo test -p iptracker-core db` → 6 passed.
 - [ ] **Step 5: 커밋** — `git add -A && git commit -m "SQLite 스키마와 설정 저장 추가"`
 
 ---
 
-### Task 4: 적재 (`core::ingest`)
+### Task 4: 적재 (`iptracker_core::ingest`)
 
 **Files:**
 - Create: `crates/core/src/ingest.rs`
@@ -316,7 +356,7 @@ CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
 **Interfaces:**
 - Consumes: `LineParser`, `detect`(Task 1), `GeoDb`, `OriginClass`(Task 2), `db::*`(Task 3)
-- Produces(모두 `serde::Serialize`/`Deserialize`, `#[serde(rename_all = "camelCase")]`):
+- Produces(모두 `serde::Serialize`/`Deserialize`. 구조체는 `#[serde(rename_all = "camelCase")]`, enum은 아래처럼 `rename_all_fields`까지 붙여 필드 이름도 camelCase로 나가게 한다):
 ```rust
 pub struct Candidate { pub path: PathBuf, pub server: String, pub filename: String } // filename은 끝의 ".gz"를 뗀 이름
 /// 파일과 폴더(하위 포함)를 받아 일반 파일 목록을 경로순으로 돌려준다.
@@ -328,12 +368,12 @@ pub struct Preview { pub log_format: Option<String>, pub rows: Vec<PreviewRow>, 
 /// 비어 있지 않은 앞 20줄을 읽는다. parser가 None이면 detect로 고르고, 못 고르면 log_format=None, rows는 빈 목록.
 pub fn preview(path: &Path, parser: Option<&LineParser>) -> Result<Preview, crate::Error>;
 /// 파일 앞 50줄로 형식을 자동 인식한다.
-pub fn detect_file(path: &Path) -> Result<Option<LineParser>, crate::Error>;
+pub fn detect_file(path: &Path, time_format: Option<&str>) -> Result<Option<LineParser>, crate::Error>;
 
-pub enum ConflictPolicy { Ask, Replace, Skip }
+#[serde(rename_all = "camelCase")] pub enum ConflictPolicy { Ask, Replace, Skip } // "ask" | "replace" | "skip"
 pub struct IngestOptions { pub conflict: ConflictPolicy, pub allow_high_failure: bool }
 pub struct FileSummary { pub file_id: i64, pub lines: u64, pub failed_lines: u64, pub foreign_requests: u64, pub date_from: Option<String>, pub date_to: Option<String> }
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum IngestOutcome {
     Ingested(FileSummary),
     Duplicate,                 // 같은 내용(sha256)이 이미 적재됨
@@ -344,18 +384,21 @@ pub enum IngestOutcome {
 pub fn ingest_file(conn: &mut rusqlite::Connection, geo: &GeoDb, parser: &LineParser, c: &Candidate,
                    opts: &IngestOptions, progress: &mut dyn FnMut(u64, u64)) -> Result<IngestOutcome, crate::Error>;
 /// date(YYYY-MM-DD) 이전의 foreign_requests를 지우고 지운 행 수를 돌려준다. ip_daily는 건드리지 않는다.
+/// 지운 뒤 db::compact를 호출한다.
 pub fn purge_foreign_before(conn: &rusqlite::Connection, date: &str) -> Result<usize, crate::Error>;
 ```
 
 **정해 둔 동작:**
 - 파일명이 `.gz`로 끝나면 gzip으로 풀어 읽는다. `sha256`은 **풀린 내용** 기준이다(같은 로그의 gz본과 원본은 같은 파일로 본다).
 - 줄은 바이트로 읽어 `String::from_utf8_lossy`로 바꾼다. 빈 줄은 줄 수에 넣지 않는다.
-- 파일 하나는 트랜잭션 하나다. 오류(I/O, 잘린 gz 포함)가 나면 롤백하고 `Err`을 돌려준다.
-- 순서: 전체를 읽어 파싱·집계하면서 해시 계산 → 같은 `sha256`이 있으면 롤백 후 `Duplicate` → 같은 `server+filename`이 있으면 정책에 따라 `Conflict`/`Skipped`/기존 `ingest_files` 행 삭제(연쇄 삭제) 후 계속 → `failed_lines / lines > 0.01`이고 `allow_high_failure`가 false면 롤백 후 `HighFailure`(`samples`는 실패한 줄 앞에서 5개) → 커밋.
+- 두 번 읽는다. **1차**: 파싱 없이 내용의 `sha256`과 비어 있지 않은 줄 수만 구한다. 이것으로 판정한다: 줄 수가 0이 아니고 같은 `sha256`이 있으면 `Duplicate` → 같은 `server+filename`이 있으면 정책에 따라 `Conflict`/`Skipped`(여기까지 DB를 건드리지 않음). **2차**: 트랜잭션을 열고, 대체라면 기존 `ingest_files` 행을 지운 뒤(연쇄 삭제) 새 `ingest_files` 행을 먼저 넣어 `file_id`를 얻고, 파싱하면서 `foreign_requests`를 바로 넣는다. 끝나면 `failed_lines / lines > 0.01`이고 `allow_high_failure`가 false일 때 롤백 후 `HighFailure`(`samples`는 실패한 줄 앞에서 5개), 아니면 `ip_daily`와 `ingest_files`의 집계 값을 넣고 커밋.
+- 오류(I/O, 잘린 gz 포함)가 나면 롤백하고 `Err`을 돌려준다.
+- 빈 파일(0줄)은 해시 중복 검사에서 뺀다(빈 파일끼리는 해시가 같으므로).
+- 줄 끝의 `\r`은 떼고 처리한다(해시는 원래 바이트 기준).
 - `ip_daily`: 모든 분류의 IP를 (KST 날짜, IP)별로 메모리에서 합산해 넣는다. `not_found`는 상태코드 404 건수.
 - `foreign_requests`: `class == Foreign`인 요청만 한 줄씩 넣는다. User-Agent는 `user_agents`에 넣고 번호로 참조한다.
 - IP 문자열: IPv4-mapped IPv6는 IPv4 표기로 저장한다.
-- `progress(읽은 바이트, 전체 바이트)`는 디스크 파일 기준 바이트로, 약 1MB마다와 끝에 한 번 호출한다.
+- `progress(처리량, 전체)`: 전체는 디스크 파일 크기의 2배(1차·2차 읽기). 약 1MB마다 호출하고, 결과가 무엇이든 끝에 `(전체, 전체)`를 한 번 호출한다.
 - `lines == 0`인 파일(빈 파일)은 `HighFailure`가 아니라 `Ingested`(0줄)로 처리한다.
 
 - [ ] **Step 1: 테스트 도우미와 실패하는 테스트 작성** — 테스트 모듈에 `fn write(dir, rel_path, lines: &[String]) -> PathBuf`, `fn write_gz(...)`, `fn line(ip, "22/Nov/2026:23:59:59 +0900", "GET /a", status) -> String`(combined 형식), `fn setup() -> (Connection, GeoDb, LineParser)`를 둔다. 테스트 IP: 국내 `168.126.63.1`, 미국 `8.8.8.8`, 내부 `10.0.0.1`.
@@ -438,23 +481,38 @@ pub fn purge_foreign_before(conn: &rusqlite::Connection, date: &str) -> Result<u
     let IngestOutcome::Ingested(s) = ingest(empty) else { panic!() };
     assert_eq!((s.lines, s.date_from), (0, None));
 }
+#[test] fn two_empty_files_are_not_duplicates() {
+    // was01/a.log, was02/b.log 둘 다 빈 파일 → 둘 다 Ingested
+}
+#[test] fn crlf_file_parses_like_lf() {
+    // 같은 3줄을 \r\n으로 저장 → Ingested, failed_lines 0, foreign_requests의 user_agent 끝에 \r 없음
+}
+#[test] fn duplicate_is_decided_before_any_db_write() {
+    // 같은 파일을 두 번째 넣을 때 ingest_files·ip_daily·foreign_requests 행 수가 처음과 같고, 결과 Duplicate
+}
+#[test] fn serde_shape_is_camel_case() {
+    let v = serde_json::to_value(IngestOutcome::HighFailure { lines: 100, failed_lines: 10, samples: vec![] }).unwrap();
+    assert_eq!(v, serde_json::json!({"kind": "highFailure", "lines": 100, "failedLines": 10, "samples": []}));
+    let v = serde_json::to_value(IngestOutcome::Ingested(FileSummary { file_id: 1, lines: 2, failed_lines: 0, foreign_requests: 1, date_from: None, date_to: None })).unwrap();
+    assert_eq!(v["kind"], "ingested"); assert_eq!(v["fileId"], 1); assert_eq!(v["foreignRequests"], 1);
+}
 #[test] fn mapped_ipv6_is_stored_as_ipv4() { /* "::ffff:8.8.8.8" 한 줄 → ip_daily.ip == "8.8.8.8" */ }
 #[test] fn purge_removes_old_foreign_rows_but_keeps_summary() {
     // 11/20, 11/22 미국 요청 각 1줄 적재 후
     assert_eq!(purge_foreign_before(&conn, "2026-11-21").unwrap(), 1);
     assert_eq!((count(&conn, "foreign_requests"), count(&conn, "ip_daily")), (1, 2));
 }
-#[test] fn progress_reaches_total() { /* 마지막 호출의 두 값이 같고 파일 크기와 같다 */ }
+#[test] fn progress_reaches_total() { /* 마지막 호출의 두 값이 같고 파일 크기의 2배다. Duplicate일 때도 마지막 호출은 (전체, 전체) */ }
 ```
 
-- [ ] **Step 2: 실패 확인** — `cargo test -p core ingest` → 컴파일 오류.
-- [ ] **Step 3: 구현** — 한 줄씩 읽는 스트리밍 방식. 수 GB 파일을 메모리에 올리지 않는다. `foreign_requests` 삽입은 prepared statement를 재사용한다.
-- [ ] **Step 4: 통과 확인** — `cargo test -p core ingest` → 17 passed.
+- [ ] **Step 2: 실패 확인** — `cargo test -p iptracker-core ingest` → 컴파일 오류.
+- [ ] **Step 3: 구현** (dev-dependency `serde_json`) — 한 줄씩 읽는 스트리밍 방식. 수 GB 파일을 메모리에 올리지 않는다. `foreign_requests` 삽입은 prepared statement를 재사용한다.
+- [ ] **Step 4: 통과 확인** — `cargo test -p iptracker-core ingest` → 21 passed.
 - [ ] **Step 5: 커밋** — `git add -A && git commit -m "로그 파일 탐색·미리보기·적재 추가"`
 
 ---
 
-### Task 5: 집계 질의 (`core::query`)
+### Task 5: 집계 질의 (`iptracker_core::query`)
 
 **Files:**
 - Create: `crates/core/src/query.rs`
@@ -563,9 +621,9 @@ pub fn ingest_status(conn: &Connection) -> Result<IngestStatus, crate::Error>;
 }
 ```
 
-- [ ] **Step 2: 실패 확인** — `cargo test -p core query` → 컴파일 오류.
+- [ ] **Step 2: 실패 확인** — `cargo test -p iptracker-core query` → 컴파일 오류.
 - [ ] **Step 3: 구현** — 404 IP 집합은 `WITH bad AS (SELECT ip FROM ip_daily WHERE date BETWEEN ?1 AND ?2 AND class IN (0,1) GROUP BY ip HAVING SUM(not_found) > 0)` 형태의 CTE로 공통 처리한다.
-- [ ] **Step 4: 통과 확인** — `cargo test -p core query` → 8 passed.
+- [ ] **Step 4: 통과 확인** — `cargo test -p iptracker-core query` → 8 passed.
 - [ ] **Step 5: 커밋** — `git add -A && git commit -m "대시보드 집계 질의 추가"`
 
 ---
@@ -583,14 +641,15 @@ pub struct GenConfig { pub out_dir: PathBuf, pub servers: u32, pub days: Vec<chr
                        pub foreign_ratio: f64, pub scanner_ips: u32, pub gzip: bool, pub seed: u64 }
 pub struct GenReport { pub files: Vec<PathBuf>, pub total_lines: u64, pub foreign_lines: u64, pub not_found_ips: u64 }
 pub fn generate(cfg: &GenConfig) -> std::io::Result<GenReport>;
-pub const COUNTRY_SAMPLES: &[(&str, &str)]; // (ISO2, 대표 IP) 예: ("KR","168.126.63.1"), ("US","8.8.8.8") …
+pub const COUNTRY_PREFIXES: &[(&str, &str)]; // (ISO2, /24 접두사 "a.b.c") — IP는 반드시 이 /24 안에서만 만든다
 ```
 - CLI: `cargo run -p loggen -- --out <dir> [--servers 16] [--days 7] [--end 2026-11-22] [--per-day 20000] [--foreign 0.02] [--scanners 30] [--gzip] [--seed 1]`
 
 **정해 둔 동작:**
 - 출력: `<out>/was01/access_log.2026-11-22` … `<out>/was16/…`, combined 형식, 시간은 `+0900`, 파일 안에서 시간순.
 - `--gzip`이면 마지막 날을 뺀 날짜의 파일을 `.gz`로 쓴다.
-- 국내 IP는 KR 대역에서, 해외 IP는 `COUNTRY_SAMPLES`의 12개국 이상(US, JP, CN, VN, DE, CA, GB, FR, SG, AU, IN, BR 포함) 대역에서 뽑는다. 미국·일본·중국 비중이 크게.
+- 국내 IP는 KR 접두사에서, 해외 IP는 `COUNTRY_PREFIXES`의 12개국 이상(US, JP, CN, VN, DE, CA, GB, FR, SG, AU, IN, BR 포함) 대역에서 뽑는다. 미국·일본·중국 비중이 크게.
+- 한 IP의 요청은 여러 서버에 고르게 나눠 쓴다(실제 L4 분배처럼. DB 크기 실측이 현실적이 되도록).
 - 정상 요청은 `/api/v1/...` 경로 몇 개에 200. "스캐너" IP(해외 위주, 일부 국내)는 `/wp-login.php`, `/.env`, `/phpmyadmin/` 같은 경로에 404만 낸다.
 - 서버마다 `10.0.0.1`의 상태 점검 요청(`GET /health`)을 조금 섞는다.
 - 같은 `seed`면 결과가 같다(`rand`의 시드 고정 생성기).
@@ -605,7 +664,7 @@ pub const COUNTRY_SAMPLES: &[(&str, &str)]; // (ISO2, 대표 IP) 예: ("KR","168
 `crates/core/tests/e2e.rs` (`loggen`은 `core`에 의존하지 않는다. 두 크레이트를 함께 쓰는 검사는 모두 여기에 둔다):
 ```rust
 #[test] fn country_samples_match_bundled_geoip() {
-    // loggen::COUNTRY_SAMPLES의 모든 (국가, IP)가 내장 mmdb에서 그 국가로 분류된다
+    // loggen::COUNTRY_PREFIXES의 모든 /24에 대해 .1과 .254가 내장 mmdb에서 그 국가로 분류된다
 }
 #[test] fn generated_logs_ingest_and_query_consistently() {
     // generate(servers 4, days [11/21, 11/22], per-day 500, foreign 0.1, scanners 5, gzip true, seed 7)
@@ -623,7 +682,7 @@ pub const COUNTRY_SAMPLES: &[(&str, &str)]; // (ISO2, 대표 IP) 예: ("KR","168
 }
 ```
 
-- [ ] **Step 2: 실패 확인** — `cargo test -p loggen && cargo test -p core --test e2e` → 컴파일 오류.
+- [ ] **Step 2: 실패 확인** — `cargo test -p loggen && cargo test -p iptracker-core --test e2e` → 컴파일 오류.
 - [ ] **Step 3: 구현** (`rand`, `flate2`, `chrono`, CLI는 `clap` derive).
 - [ ] **Step 4: 통과 확인** — `cargo test --workspace` → 전부 통과.
 - [ ] **Step 5: 커밋** — `git add -A && git commit -m "가짜 access 로그 생성기와 통합 테스트 추가"`
@@ -637,12 +696,12 @@ pub const COUNTRY_SAMPLES: &[(&str, &str)]; // (ISO2, 대표 IP) 예: ("KR","168
 - Modify: `Cargo.toml`(멤버 추가)
 
 **Interfaces:**
-- Consumes: `core`의 Task 1~5 인터페이스 전부.
+- Consumes: `iptracker_core`의 Task 1~5 인터페이스 전부.
 - Produces — Tauri 명령(인자·반환은 camelCase JSON). `src/api.ts`에 같은 이름의 타입과 래퍼 함수를 둔다:
 
 | 명령 | 인자 | 반환 |
 |---|---|---|
-| `scan_paths` | `paths: string[]` | `Candidate[]` |
+| `scan_paths` | `paths: string[]` | `Candidate[]` (저장된 `serverRegex`를 적용) |
 | `preview_file` | `path: string, logFormat?: string, timeFormat?: string` | `Preview` |
 | `ingest_one` | `candidate: Candidate, conflict: "ask"\|"replace"\|"skip", allowHighFailure: boolean, deleteOriginal: boolean, logFormat?: string, timeFormat?: string` | `IngestResult` |
 | `get_kpis` / `get_countries` / `get_daily` | `filter: Filter` | `Kpis` / `CountryRow[]` / `DayPoint[]` |
@@ -656,6 +715,11 @@ pub const COUNTRY_SAMPLES: &[(&str, &str)]; // (ISO2, 대표 IP) 예: ("KR","168
 | `set_db_path` | `path: string` | `void`(다음 실행부터 적용) |
 
 ```ts
+type FileSummary = { fileId: number; lines: number; failedLines: number; foreignRequests: number; dateFrom: string | null; dateTo: string | null };
+type IngestOutcome =
+  | ({ kind: "ingested" } & FileSummary)
+  | { kind: "duplicate" } | { kind: "conflict" } | { kind: "skipped" }
+  | { kind: "highFailure"; lines: number; failedLines: number; samples: string[] };
 type IngestResult = { outcome: IngestOutcome; deleted: boolean; deleteError?: string };
 type Settings = { serviceName: string; expectedServers: number; serverRegex: string; logFormat: string; timeFormat: string }; // 빈 문자열 = 미지정
 type AppInfo = { version: string; geoBuildDate: string; geoIsBundled: boolean; dbPath: string; dbBytes: number };
@@ -663,11 +727,12 @@ type AppInfo = { version: string; geoBuildDate: string; geoIsBundled: boolean; d
 - 이벤트 `ingest-progress`: `{ path: string, bytesRead: number, bytesTotal: number }`.
 
 **정해 둔 동작:**
-- 상태: `Mutex<rusqlite::Connection>`, `RwLock<core::geo::GeoDb>`. 명령은 `tauri::async_runtime::spawn_blocking` 안에서 실행해 화면이 멈추지 않게 한다.
+- 상태: `Mutex<rusqlite::Connection>`, `RwLock<iptracker_core::geo::GeoDb>`. 명령은 `tauri::async_runtime::spawn_blocking` 안에서 실행해 화면이 멈추지 않게 한다.
 - 설정 기본값: `serviceName ""`, `expectedServers 16`, 나머지 `""`. `settings` 테이블에 저장한다. `save_settings`는 `serverRegex`가 정규식으로 컴파일되지 않거나 `logFormat`이 `LineParser::new`에서 실패하면 한국어 오류 문자열로 거부한다.
-- DB 위치: 기본은 앱 데이터 폴더의 `ip-tracker.db`. `set_db_path`는 앱 설정 폴더의 `config.json`(`{"dbPath": "..."}`)에 기록하고 시작할 때 읽는다(`config.rs`).
-- GeoIP: 앱 데이터 폴더에 `geoip.mmdb`가 있으면 그것을, 없으면 내장 리소스 `resources/dbip-country-lite.mmdb`를 연다. `replace_geoip`는 고른 파일을 `GeoDb::open`으로 검증한 뒤 앱 데이터 폴더에 복사하고 메모리의 DB를 교체한다. 검증에 실패하면 기존 것을 유지하고 오류를 돌려준다.
-- `ingest_one`의 파서: 인자 `logFormat` → 저장된 설정 `logFormat` → `detect_file` 순으로 정한다. 형식을 못 정하면 오류 `"로그 형식을 인식하지 못했습니다. 설정에서 LogFormat을 지정해 주세요."`.
+- DB 위치: 기본은 `app_local_data_dir`의 `ip-tracker.db`(Roaming 아님). `set_db_path`는 `db::copy_to`로 현재 DB를 새 경로에 복사한 뒤 앱 설정 폴더의 `config.json`(`{"dbPath": "..."}`)에 기록한다. 다음 실행부터 새 경로를 쓴다(`config.rs`). 복사에 실패하면 설정을 바꾸지 않는다.
+- WAL: `ingest_one`과 `purge_foreign`이 끝날 때마다, 그리고 `RunEvent::Exit`에서 `db::compact`를 호출한다(종료가 `process::exit`라 연결이 정리되지 않아도 `-wal`이 남지 않게). `AppInfo.dbBytes`는 `.db`와 `-wal` 크기의 합.
+- GeoIP: `app_local_data_dir`에 `geoip.mmdb`가 있으면 그것을, 없으면 내장 리소스 `resources/dbip-country-lite.mmdb`를 연다. `replace_geoip`는 고른 파일을 `GeoDb::open`으로 검증한 뒤 `app_local_data_dir`에 복사하고 메모리의 DB를 교체한다. 검증에 실패하면 기존 것을 유지하고 오류를 돌려준다.
+- 파서 결정은 `preview_file`과 `ingest_one`이 **같은 함수** `resolve_parser(path, logFormat?, timeFormat?)`를 쓴다: 시간 형식 = 인자 `timeFormat` → 저장된 `timeFormat` → 없음. LogFormat = 인자 `logFormat` → 저장된 `logFormat` → `detect_file(path, 시간 형식)`. 화면(Task 9)은 미리보기에서 확정된 `Preview.logFormat`과 시간 형식을 `ingest_one`에 반드시 그대로 넘긴다(미리보기와 다른 형식으로 적재되는 일이 없게). 형식을 못 정하면 오류 `"로그 형식을 인식하지 못했습니다. 설정에서 LogFormat을 지정해 주세요."`.
 - 원본 삭제: `deleteOriginal`이 true이고 결과가 `Ingested`일 때만 `std::fs::remove_file`. 삭제에 실패하면 적재는 그대로 두고 `deleted: false, deleteError: <메시지>`를 돌려준다. `Duplicate`·`Skipped`·`Conflict`·`HighFailure`는 지우지 않는다.
 - `tauri.conf.json`: `productName "IP Tracker"`, `identifier "kr.iptracker.app"`, 창 1400×900, `security.csp` = `"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"`, `bundle.resources`에 `resources/*`, `bundle.targets ["nsis"]`, `bundle.windows.webviewInstallMode.type "skip"`.
 - 플러그인: `tauri-plugin-dialog`(파일·폴더 선택)만 쓴다. 끌어다 놓기는 Tauri 창의 drag-drop 이벤트로 경로를 받는다.
@@ -683,6 +748,11 @@ type AppInfo = { version: string; geoBuildDate: string; geoIsBundled: boolean; d
     // 삭제 함수를 주입 가능하게 하고(fn(&Path) -> io::Result<()>), 항상 PermissionDenied를 돌려주는 것으로 호출
     // → outcome Ingested, deleted=false, delete_error.is_some(), ip_daily에 데이터 있음
 }
+#[test] fn preview_and_ingest_resolve_the_same_parser() {
+    // 저장된 logFormat = COMMON, 인자 logFormat = COMBINED → resolve_parser 결과가 COMBINED
+    // 인자 없음 → COMMON. 인자 timeFormat만 "%d.%m.%Y %H:%M:%S" → detect_file이 그 시간 형식으로 인식
+}
+#[test] fn scan_applies_saved_server_regex() { /* serverRegex "^(was\\d+)_" 저장 후 logs/was07_a.log → server "was07" */ }
 #[test] fn unrecognized_format_is_a_korean_error() {
     assert_eq!(do_ingest(garbage_file, ...).unwrap_err(), "로그 형식을 인식하지 못했습니다. 설정에서 LogFormat을 지정해 주세요.");
 }
@@ -721,6 +791,11 @@ export function delta(cur: number, prev: number): string;  // "+3.1%", "-2.0%", 
 export function dateTime(ts: number): string;              // 유닉스 초 → "11/22 23:58" (KST)
 // countryName.ts
 export function countryName(iso2: string): string;         // "US" → "미국", 모르는 코드는 코드 그대로
+// 차트 컴포넌트 — 보고서(Task 10)가 같은 컴포넌트를 재사용한다
+type ChartCommon = { height: number | string; renderer?: "canvas" | "svg"; animation?: boolean }; // 기본 canvas, true
+export function WorldMap(p: { rows: CountryRow[] } & ChartCommon): JSX.Element;
+export function TopCountries(p: { rows: CountryRow[]; top: number } & ChartCommon): JSX.Element; // top개 + "기타 n개국"
+export function DailyTrend(p: { points: DayPoint[]; series: ("requests" | "ips")[] } & ChartCommon): JSX.Element;
 ```
 - `App.tsx`가 `filter: { preset, period, exclude404 }` 상태를 들고 `Dashboard`와 `Report`(Task 10)에 넘긴다. 상단 탭: `대시보드` / `로그 적재` / `설정`.
 
@@ -804,13 +879,14 @@ export async function runQueue(
 ```
 
 **정해 둔 동작과 문구:**
+- `ingest_one`에는 미리보기에서 확정된 LogFormat과 시간 형식을 항상 넘긴다.
 - 흐름: ① 파일·폴더를 끌어다 놓거나 `파일 선택`/`폴더 선택` → ② `scan_paths`로 목록(서버 이름 / 파일명 / 크기) 표시. 서버 이름은 칸에서 직접 고칠 수 있다 → ③ 목록 첫 파일의 미리보기 표(`IP` / `시간` / `메서드` / `URL` / `상태코드`, 20줄)와 인식된 형식 표시. 다른 파일을 누르면 그 파일의 미리보기로 바뀐다 → ④ `적재 시작`을 눌러야 적재한다.
 - 미리보기에서 형식을 인식하지 못하면 `로그 형식을 자동으로 인식하지 못했습니다. 아파치 LogFormat을 붙여 넣어 주세요.`와 입력 칸(LogFormat, 시간 형식)을 보여주고 `다시 미리보기` 버튼을 둔다. 인식됐더라도 `형식 직접 지정`을 눌러 같은 입력 칸을 열 수 있다. 여기서 지정한 형식은 `이 형식을 저장` 체크 시 `save_settings`로 저장한다.
 - 형식을 인식하지 못한 상태에서는 `적재 시작`을 누를 수 없다.
 - 체크박스 `적재가 끝나면 원본 파일 삭제`(기본 꺼짐, 마지막 선택을 `localStorage`에 기억). 옆 설명 `DB에 저장이 끝난 파일만 지웁니다. 휴지통을 거치지 않습니다.`
 - `runQueue`는 파일을 하나씩 순서대로 처리한다. 결과별 처리:
   - `conflict` → `askConflict`. 문구: `{서버} / {파일명}은 이미 적재된 파일과 내용이 다릅니다. 기존 것을 대체할까요?` 버튼 `대체` / `건너뛰기`, 체크 `남은 파일에도 똑같이 적용`. 답에 따라 같은 파일을 `replace` 또는 `skip`으로 다시 호출한다.
-  - `highFailure` → `askHighFailure`. 문구: `{파일명}에서 {lines}줄 중 {failed}줄을 읽지 못했습니다. 형식이 맞는지 확인해 주세요.` 아래 실패 줄 예시, 버튼 `그래도 적재` / `이 파일 건너뛰기`. `그래도 적재`면 `allowHighFailure=true`로 다시 호출한다.
+  - `highFailure` → `askHighFailure`. 문구: `{파일명}에서 {lines}줄 중 {failed}줄을 읽지 못했습니다. 형식이 맞는지 확인해 주세요.` 아래 실패 줄 예시, 버튼 `그래도 적재` / `이 파일 건너뛰기`. `그래도 적재`면 `allowHighFailure=true`로 다시 호출한다. 이때 conflict 인자는 이미 정한 값(`replace`/`skip`)을 유지하고 `ask`로 되돌리지 않는다.
   - `ingestOne`이 오류를 던지면 그 행을 `실패`(오류 메시지 표시)로 두고 다음 파일로 넘어간다.
 - 진행: 파일별 진행 막대(`ingest-progress`)와 전체 `{끝난 수}/{전체 수}`. 끝나면 요약 `적재 {n}개 · 중복 {n}개 · 건너뜀 {n}개 · 실패 {n}개, 해외 요청 {n}건`.
 - 원본 삭제에 실패한 행에는 `적재는 완료했지만 원본을 지우지 못했습니다: {오류}`를 표시한다.
@@ -835,6 +911,11 @@ test("high failure retries only when confirmed", async () => {
   // 파일1: highFailure → 확인 true → allowHighFailure=true로 재호출 → ingested
   // 파일2: highFailure → 확인 false → 재호출 없음, state "건너뜀"
 });
+test("high failure after replace keeps the replace decision", async () => {
+  // ingestOne: (ask,false) → conflict, (replace,false) → highFailure, (replace,true) → ingested
+  expect(calls).toEqual([["a", "ask", false], ["a", "replace", false], ["a", "replace", true]]);
+  expect(askConflict).toHaveBeenCalledTimes(1);
+});
 test("a thrown error marks the row failed and continues", async () => {
   expect(rows.map(r => r.state)).toEqual(["실패", "완료"]);
   expect(rows[0].message).toBe("읽기 오류");
@@ -851,7 +932,7 @@ test("delete failure is carried on the row", async () => {
 - [ ] **Step 2: 실패 확인** — `npx vitest run src/lib/ingestQueue.test.ts` → 실패.
 - [ ] **Step 3: `runQueue` 구현 후 통과 확인.**
 - [ ] **Step 4: 적재 화면 구현.**
-- [ ] **Step 5: 실제 화면 확인(Task 8의 Step 5 항목 포함)** — `cargo run -p loggen -- --out /tmp/iptracker-logs --servers 16 --days 7 --end 2026-11-22 --gzip`로 만든 폴더를 끌어다 놓아 미리보기 → 적재 → 대시보드 확인. 같은 폴더를 다시 넣으면 전부 `중복(건너뜀)`인지, 파일 하나의 내용을 바꿔 다시 넣으면 대체 여부를 묻는지, 원본 삭제를 켜면 적재된 파일만 사라지는지 확인한다. 화면을 캡처해 목업과 나란히 놓고 요청자에게 보여준다.
+- [ ] **Step 5: 실제 화면 확인(Task 8의 Step 5 항목 포함)** — `cargo run -p loggen -- --out /tmp/iptracker-logs --servers 16 --days 7 --end 2026-11-22 --gzip`로 만든 폴더를 끌어다 놓아 미리보기 → 적재 → 대시보드 확인. 같은 폴더를 다시 넣으면 전부 `중복(건너뜀)`인지, 파일 하나의 내용을 바꿔 다시 넣으면 대체 여부를 묻는지, 원본 삭제를 켜면 적재된 파일만 사라지는지 확인한다. 설정 화면의 DB 크기로 "서버 16대 × 하루" 적재당 DB 증가량을 기록해 요청자에게 알린다(1년치로 환산해 수 GB를 넘으면 `ip_daily` 압축을 후속 작업으로 제안). 화면을 캡처해 목업과 나란히 놓고 요청자에게 보여준다.
 - [ ] **Step 6: 커밋** — `git add -A && git commit -m "로그 적재 화면 추가"`
 
 ---
@@ -863,7 +944,7 @@ test("delete failure is carried on the row", async () => {
 - Modify: `src/App.tsx`, `src/screens/Dashboard.tsx`(`보고서 내보내기` 버튼)
 
 **Interfaces:**
-- Consumes: `get_kpis`, `get_countries`, `get_daily`, `get_settings`, `get_app_info`, `App`의 `filter` 상태, `WorldMap`·`DailyTrend` 컴포넌트(Task 8).
+- Consumes: `get_kpis`, `get_countries`, `get_daily`, `get_settings`, `get_app_info`, `App`의 `filter` 상태, `WorldMap`·`TopCountries`·`DailyTrend` 컴포넌트와 props(Task 8).
 - Produces:
 ```ts
 export function summarySentence(a: { days: number; countries: number; foreignIps: number; foreignShare: number; top: { name: string; share: number }[] }): string;
@@ -878,7 +959,8 @@ export function reportFootnotes(a: { exclude404: boolean; excludedIps: number; g
 - 하단 안내(순서대로): `국가는 접속 IP 주소 기준으로 판별했으며, VPN 등으로 실제 위치와 다를 수 있습니다.` / (스위치가 켜졌을 때만) `404 응답을 받은 IP {n}개(공격 시도 추정)는 집계에서 제외했습니다.` / `IP 위치 정보: DB-IP (db-ip.com), CC BY 4.0, {geoBuildDate} 기준`.
 - 대시보드의 현재 기간과 스위치 상태를 그대로 쓴다.
 - 보고서 화면은 미리보기와 `인쇄 / PDF 저장` 버튼, `돌아가기` 버튼으로 구성한다. 버튼은 `window.print()`를 호출한다(Windows 인쇄 창에서 "Microsoft Print to PDF"를 고르면 PDF로 저장된다. 버튼 옆에 이 안내를 한 줄로 적는다).
-- 인쇄 CSS: `@page { size: A4 portrait; margin: 14mm; }`, `@media print`에서 버튼·탭을 숨기고 보고서만 한 장에 들어가게 한다. 흑백 인쇄에서도 구분되게 지도와 막대는 한 가지 색의 농도만 쓴다. 차트는 인쇄 품질을 위해 SVG 렌더러(`renderer: "svg"`)로 그린다.
+- 인쇄 CSS: `@page { size: A4 portrait; margin: 0; }`(여백이 0이면 WebView2가 날짜·주소·쪽번호 머리글·바닥글을 찍지 않는다). 보고서 루트는 `width: 210mm; min-height: 297mm; padding: 14mm; box-sizing: border-box`. `@media print`에서 버튼·탭을 숨기고 보고서만 한 장에 들어가게 한다. 흑백 인쇄에서도 구분되게 지도와 막대는 한 가지 색의 농도만 쓴다.
+- 차트는 `renderer: "svg"`, `animation: false`로, mm 단위로 크기를 고정한 컨테이너 안에 그린다(화면 너비에 따라 넘치거나 잘리지 않게).
 
 - [ ] **Step 1: 실패하는 테스트 작성**
 
@@ -907,7 +989,7 @@ test("title and footnotes", () => {
 - [ ] **Step 2: 실패 확인** — `npx vitest run src/lib/summary.test.ts` → 실패.
 - [ ] **Step 3: `summary.ts` 구현 후 통과 확인.**
 - [ ] **Step 4: 보고서 화면과 인쇄 CSS 구현.**
-- [ ] **Step 5: 실제 확인** — `npm run tauri dev`에서 보고서를 열어 PDF로 저장하고, 한 장에 들어가는지와 목업과 구성이 같은지 확인한다. PDF를 요청자에게 보여준다.
+- [ ] **Step 5: 실제 확인** — `npm run tauri dev`에서 보고서를 열어 PDF로 저장하고, 한 장에 들어가는지와 목업과 구성이 같은지 확인한다. PDF를 요청자에게 보여준다. (Mac의 웹뷰는 Windows WebView2와 인쇄 결과가 다르므로, 최종 확인은 Task 12의 Windows 확인에서 한다.)
 - [ ] **Step 6: 커밋** — `git add -A && git commit -m "보고서 내보내기 추가"`
 
 ---
@@ -926,7 +1008,7 @@ test("title and footnotes", () => {
   - **기본**: `서비스 이름`(보고서 제목에 사용), `서버 대수`(숫자, 기본 16).
   - **로그 형식**: `아파치 LogFormat`(비우면 자동 인식), `시간 형식`(비우면 자동 인식, 예시 `%d/%b/%Y:%H:%M:%S %z`), `서버 이름 추출 규칙`(정규식, 첫 번째 괄호가 서버 이름. 비우면 폴더 이름 사용. 예시 `^(was\d+)_`).
   - **IP 위치 DB**: `현재 DB 기준일 {geoBuildDate}`와 `내장 DB` 또는 `교체한 DB` 표시, `새 DB 파일 불러오기(.mmdb)` 버튼. 설명 `교체해도 이미 적재한 데이터의 국가는 바뀌지 않습니다.`
-  - **저장 공간**: `DB 위치 {dbPath}`, `DB 크기 {MB}`, `DB 위치 변경` 버튼(설명 `다음 실행부터 적용됩니다. 기존 DB 파일은 직접 옮겨 주세요.`), `오래된 해외 요청 상세 삭제`(개월 수 입력, 기본 6, 버튼 `삭제`). 삭제 전 확인 문구 `{날짜} 이전의 해외 요청 상세를 지웁니다. 국가별 통계는 그대로 남습니다. 계속할까요?`, 완료 문구 `{n}건을 지웠습니다.`
+  - **저장 공간**: `DB 위치 {dbPath}`, `DB 크기 {MB}`, `DB 위치 변경` 버튼(설명 `현재 DB를 새 위치로 복사하고, 다음 실행부터 새 위치를 씁니다. 기존 파일은 확인 후 직접 지워 주세요.`), `오래된 해외 요청 상세 삭제`(개월 수 입력, 기본 6, 버튼 `삭제`). 삭제 전 확인 문구 `{날짜} 이전의 해외 요청 상세를 지웁니다. 국가별 통계는 그대로 남습니다. 계속할까요?`, 완료 문구 `{n}건을 지웠습니다.`
   - **정보**: 앱 버전, `IP 위치 정보: DB-IP (db-ip.com), CC BY 4.0`.
 - `저장`을 누르면 `save_settings`를 호출하고, 거부되면 돌려받은 오류 문구를 해당 구역 아래에 보여준다.
 - 삭제 기준일은 오늘(KST)에서 입력한 개월 수를 뺀 날짜다.
@@ -947,7 +1029,7 @@ test("title and footnotes", () => {
 - `scripts/check-offline.mjs`: `dist/` 아래 모든 `.html`·`.js`·`.css`에서 `https?://` 주소를 찾는다. 허용 목록(`http://www.w3.org/`로 시작하는 XML 네임스페이스, `https://db-ip.com` 출처 표기 문자열)을 뺀 나머지가 하나라도 있으면 파일명·주소를 출력하고 종료 코드 1. 없으면 `외부 주소 없음`을 출력하고 0. ECharts 등 라이브러리 안에 문서 링크 문자열이 걸리면, 실제 요청이 아닌 문자열임을 확인한 뒤 정확한 주소 단위로 허용 목록에 추가하고 이유를 주석으로 남긴다.
 - `package.json`: `"test": "vitest run"`, `"check:offline": "node scripts/check-offline.mjs"`.
 - `release.yml`: `v*` 태그 푸시에 실행, `windows-latest`, Node 22와 Rust stable 설치 → `npm ci` → `npm test` → `cargo test --workspace` → `npm run build` → `npm run check:offline` → `tauri-apps/tauri-action@v0`로 NSIS 설치 파일을 만들어 해당 태그의 GitHub 릴리즈(초안)에 올린다.
-- `README.md`(한국어): 무엇을 하는 도구인지, 개발 실행(`npm install`, `npm run tauri dev`), 가짜 로그 만들기(loggen 명령), 릴리즈 만드는 법(태그 푸시), 폐쇄망 반입 후 첫 실행 때 확인할 것(미리보기에서 IP·시간이 맞는지, 안 맞으면 설정에서 LogFormat 지정), GeoIP 출처 표기.
+- `README.md`(한국어): 무엇을 하는 도구인지, 개발 실행(`npm install`, `npm run tauri dev`), 가짜 로그 만들기(loggen 명령), 릴리즈 만드는 법(태그 푸시), 폐쇄망 반입 후 첫 실행 때 확인할 것(미리보기에서 IP·시간이 맞는지, 안 맞으면 설정에서 LogFormat 지정. 하루 파일의 첫 줄과 끝 줄 시간이 KST 0시 무렵~24시 무렵인지 — rotatelogs가 UTC 기준으로 파일을 나누면 한 파일이 이틀에 걸쳐 최근 날짜가 9시간치만 보일 수 있음), GeoIP 출처 표기.
 
 - [ ] **Step 1: 검사 스크립트의 실패 확인** — `dist/`에 `https://example.com/x.js`를 참조하는 임시 파일을 두고 `npm run check:offline` → 종료 코드 1과 해당 주소 출력. 임시 파일 삭제.
 - [ ] **Step 2: 통과 확인** — `npm run build && npm run check:offline` → `외부 주소 없음`.
@@ -955,3 +1037,4 @@ test("title and footnotes", () => {
 - [ ] **Step 4: 네트워크 차단 실행 확인** — Mac의 Wi-Fi를 끈 상태로 `npm run tauri build` 결과물을 실행해 적재·대시보드·지도·보고서가 모두 동작하는지 확인한다(요청자에게 Wi-Fi 끄기를 부탁하거나, 개발자 도구의 네트워크 탭에 외부 요청이 0건인지로 대신한다).
 - [ ] **Step 5: 커밋** — `git add -A && git commit -m "오프라인 검사와 Windows 릴리즈 워크플로 추가"`
 - [ ] **Step 6: 릴리즈는 요청자 확인 후** — GitHub 원격 저장소 생성·푸시·태그는 요청자가 지시할 때만 한다.
+- [ ] **Step 7: Windows 확인(요청자와 함께)** — 릴리즈 설치 파일을 Windows PC에 설치해 loggen 로그로 적재하고, 보고서를 "Microsoft Print to PDF"로 저장해 머리글·바닥글이 없고 A4 한 장에 들어가는지 확인한다. 폐쇄망 반입 전에 한다.
