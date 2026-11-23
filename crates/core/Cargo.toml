@@ -17,3 +17,4 @@ walkdir = "2.5"
 [dev-dependencies]
 serde_json = "1"
 tempfile = "3.27.0"
+loggen = { path = "../loggen" }
